@@ -29,6 +29,8 @@ router.post('/enviar-whats', async (req, res) => {
 
 // Webhook para receber mensagens do WhatsApp (configure na W-API)
 router.post('/webhook-whats', async (req, res) => {
+  // Log completo do payload recebido para depuração
+  console.log('[WEBHOOK-WHATS][DEBUG][PAYLOAD RECEBIDO]', JSON.stringify(req.body));
   const { Op, literal } = require('sequelize');
   const Account = require('../models/Account');
   const Bill = require('../models/Bill');
