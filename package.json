@@ -1,0 +1,19 @@
+{
+  "name": "financas-pf-backend",
+  "version": "1.0.0",
+  "description": "Backend do sistema Finanças PF",
+  "main": "index.js",
+  "scripts": {
+    "start": "concurrently \"node index.js\" \"node whatsapp.js\""
+  },
+  "dependencies": {
+    "concurrently": "^8.2.2",
+    "axios": "^1.13.6",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^4.18.2",
+    "mysql2": "^3.19.1",
+    "sequelize": "^6.37.8"
+  }
+}

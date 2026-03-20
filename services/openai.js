@@ -1,0 +1,21 @@
+const axios = require('axios');
+
+const callOpenAI = async ({ messages, max_tokens = 200, apiKey }) => {
+  const response = await axios.post(
+    'https://api.openai.com/v1/chat/completions',
+    {
+      model: 'gpt-3.5-turbo',
+      messages,
+      max_tokens
+    },
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+    }
+  );
+  return response.data.choices[0].message.content.trim();
+};
+
+module.exports = { callOpenAI };
