@@ -38,16 +38,10 @@ router.post('/webhook-whats', async (req, res) => {
   const MoneyBox = require('../models/MoneyBox');
   const Transaction = require('../models/Transaction');
 
-
   let phone = null;
   let message = null;
   const body = req.body || {};
-  // Filtro para evitar loop: só processa mensagens com texto e phone igual ao autorizado (sem sufixos)
-  const PHONES_AUTORIZADOS = ['11986387651', '5511986387651'];
-  if (!message || !PHONES_AUTORIZADOS.includes(phone)) {
-    console.log('[WEBHOOK-WHATS][LOOP PROTECTION] Ignorando mensagem automática ou número não autorizado:', { phone, message });
-    return res.json({ status: 'ignorado', motivo: 'mensagem automática ou número não autorizado', phone, message });
-  }
+  // Extrair phone e message do payload ANTES do filtro
   if (body.sender && body.sender.id) {
     phone = body.sender.id;
   } else if (body.chat && body.chat.id) {
@@ -59,6 +53,12 @@ router.post('/webhook-whats', async (req, res) => {
     } else if (body.msgContent.extendedTextMessage && body.msgContent.extendedTextMessage.text) {
       message = body.msgContent.extendedTextMessage.text;
     }
+  }
+  // Filtro para evitar loop: só processa mensagens com texto e phone igual ao autorizado (sem sufixos)
+  const PHONES_AUTORIZADOS = ['11986387651', '5511986387651'];
+  if (!message || !PHONES_AUTORIZADOS.includes(phone)) {
+    console.log('[WEBHOOK-WHATS][LOOP PROTECTION] Ignorando mensagem automática ou número não autorizado:', { phone, message });
+    return res.json({ status: 'ignorado', motivo: 'mensagem automática ou número não autorizado', phone, message });
   }
   console.log('[WEBHOOK-WHATS] phone:', phone);
   console.log('[WEBHOOK-WHATS] message:', message);
