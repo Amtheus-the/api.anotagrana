@@ -106,6 +106,9 @@ app.post('/webhook-whats', async (req, res) => {
           await conta.save();
           resposta = `Registrado! Sua despesa de R$ ${iaJson.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} com "${iaJson.categoria || 'outros'}" foi adicionada e descontada da conta principal.`;
         }
+      } else if (iaJson && iaJson.intencao === 'saudacao') {
+  // Responder com o texto original da IA para saudação
+  resposta = iaText;
       } else if (iaJson && iaJson.intencao === 'registrar_receita' && iaJson.valor) {
         // Registrar receita
         const Account = require('./models/Account');
