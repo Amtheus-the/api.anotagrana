@@ -11,6 +11,7 @@ const OPENAI_KEY = process.env.OPENAI_KEY;
 
 // Endpoint para conversar com a IA (OpenAI) diretamente
 router.post('/enviar-whats', async (req, res) => {
+  console.log('[ROUTE][DEBUG] /enviar-whats chamada', JSON.stringify(req.body));
   const { phone, message } = req.body;
   try {
     const resposta = await callOpenAI({

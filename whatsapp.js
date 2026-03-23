@@ -11,7 +11,7 @@ const INSTANCE_ID = '90LFF2-THZ1AJ-HYES7R';
 const TOKEN = 'TKXyC4sgFOORzzAXGXT9PtZOA386hJAna';
 
 // Token da OpenAI
-const OPENAI_KEY = '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';
+const OPENAI_KEY = process.env.OPENAI_KEY;
 
 // Endpoint para enviar mensagem manualmente
 app.post('/enviar-whats', async (req, res) => {
@@ -36,7 +36,7 @@ app.post('/enviar-whats', async (req, res) => {
 // Webhook para receber mensagens do WhatsApp (configure na W-API)
 app.post('/webhook-whats', async (req, res) => {
   const { phone, message } = req.body;
-  console.log('Mensagem recebida:', phone, message);
+  console.log('[WHATSAPP][WEBHOOK] Mensagem recebida:', phone, message);
   let resposta = '';
   if (message) {
     // Busca usuário pelo telefone
@@ -48,6 +48,7 @@ app.post('/webhook-whats', async (req, res) => {
       let iaJson = null;
       try {
         const prompt = `Você é uma assistente financeira chamada Thayná, do sistema Anota Grana. Analise a frase do usuário e responda APENAS em JSON válido, sem explicações. Sempre que possível, extraia valor, categoria, conta, período, etc. Exemplos:\nUsuário: Acabei de gastar 80 reais em unha\nResposta: {\"intencao\":\"registrar_gasto\",\"valor\":80,\"categoria\":\"unha\"}\nUsuário: Gastei 30 reais no restaurante\nResposta: {\"intencao\":\"registrar_gasto\",\"valor\":30,\"categoria\":\"restaurante\"}\nUsuário: Quanto gastei esse mês?\nResposta: {\"intencao\":\"consulta_gastos_mes\"}\nUsuário: Quanto tenho na minha conta Nubank?\nResposta: {\"intencao\":\"consulta_saldo\",\"conta\":\"Nubank\"}\nUsuário: Quais contas tenho a pagar esse mês?\nResposta: {\"intencao\":\"consulta_contas_a_pagar_mes\"}\nUsuário: ${message}\nResposta:`;
+        console.log('[WHATSAPP][IA][REQUEST]', prompt);
         const iaRes = await axios.post(
           'https://api.openai.com/v1/chat/completions',
           {
@@ -66,9 +67,11 @@ app.post('/webhook-whats', async (req, res) => {
           }
         );
         const iaText = iaRes.data.choices[0].message.content.trim();
+        console.log('[WHATSAPP][IA][RESPONSE]', iaText);
         iaJson = JSON.parse(iaText);
-        console.log('[WHATSAPP][IA][JSON]', iaJson);
+        console.log('[WHATSAPP][IA][JSON PARSED]', iaJson);
       } catch (e) {
+        console.error('[WHATSAPP][IA][ERRO PARSE OU REQUISIÇÃO]', e.message);
         iaJson = null;
       }
       // 2. Executa ação real conforme intenção
