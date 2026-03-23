@@ -1,3 +1,4 @@
+console.log('[DEBUG] OPENAI_KEY:', process.env.OPENAI_KEY);
 const express = require('express');
 const axios = require('axios');
 require('dotenv').config();
