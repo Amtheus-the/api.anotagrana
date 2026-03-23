@@ -24,6 +24,7 @@ const User = sequelize.define('User', {
     defaultValue: false
   }
 }, {
+  tableName: 'Users', // Garante uso do nome correto da tabela
   timestamps: true,
   createdAt: 'created_at',
   updatedAt: false

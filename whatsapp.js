@@ -8,8 +8,8 @@ const app = express();
 app.use(express.json());
 
 // Dados da instância WhatsApp
-const INSTANCE_ID = '90LFF2-THZ1AJ-HYES7R';
-const TOKEN = 'TKXyC4sgFOORzzAXGXT9PtZOA386hJAna';
+const INSTANCE_ID = process.env.INSTANCE_ID;
+const TOKEN = process.env.TOKEN;
 
 // Token da OpenAI
 const OPENAI_KEY = process.env.OPENAI_KEY;
