@@ -47,6 +47,7 @@ app.post('/webhook-whats', async (req, res) => {
     } else {
       // 1. IA interpreta intenção e dados (sempre responde em JSON)
       let iaJson = null;
+      let iaText = '';
       try {
         const prompt = `Você é uma assistente financeira chamada Thayná, do sistema Anota Grana. Analise a frase do usuário e responda APENAS em JSON válido, sem explicações. Sempre que possível, extraia valor, categoria, conta, período, etc. Exemplos:\nUsuário: Acabei de gastar 80 reais em unha\nResposta: {\"intencao\":\"registrar_gasto\",\"valor\":80,\"categoria\":\"unha\"}\nUsuário: Gastei 30 reais no restaurante\nResposta: {\"intencao\":\"registrar_gasto\",\"valor\":30,\"categoria\":\"restaurante\"}\nUsuário: Quanto gastei esse mês?\nResposta: {\"intencao\":\"consulta_gastos_mes\"}\nUsuário: Quanto tenho na minha conta Nubank?\nResposta: {\"intencao\":\"consulta_saldo\",\"conta\":\"Nubank\"}\nUsuário: Quais contas tenho a pagar esse mês?\nResposta: {\"intencao\":\"consulta_contas_a_pagar_mes\"}\nUsuário: ${message}\nResposta:`;
         console.log('[WHATSAPP][IA][REQUEST]', prompt);
@@ -68,7 +69,7 @@ app.post('/webhook-whats', async (req, res) => {
           }
         );
         console.log('[WHATSAPP][IA][RAW RESPONSE DATA]', iaRes.data);
-        const iaText = iaRes.data.choices[0].message.content.trim();
+        iaText = iaRes.data.choices[0].message.content.trim();
         console.log('[WHATSAPP][IA][RESPONSE]', iaText);
         iaJson = JSON.parse(iaText);
         console.log('[WHATSAPP][IA][JSON PARSED]', iaJson);
