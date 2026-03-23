@@ -73,6 +73,9 @@ app.post('/webhook-whats', async (req, res) => {
         console.log('[WHATSAPP][IA][JSON PARSED]', iaJson);
       } catch (e) {
         console.error('[WHATSAPP][IA][ERRO PARSE OU REQUISIÇÃO]', e.message);
+        if (e.response) {
+          console.error('[WHATSAPP][IA][ERRO RESPONSE DATA]', e.response.data);
+        }
         iaJson = null;
       }
       // 2. Executa ação real conforme intenção
