@@ -67,6 +67,7 @@ app.post('/webhook-whats', async (req, res) => {
             },
           }
         );
+        console.log('[WHATSAPP][IA][RAW RESPONSE DATA]', iaRes.data);
         const iaText = iaRes.data.choices[0].message.content.trim();
         console.log('[WHATSAPP][IA][RESPONSE]', iaText);
         iaJson = JSON.parse(iaText);
