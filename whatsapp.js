@@ -49,7 +49,7 @@ app.post('/webhook-whats', async (req, res) => {
       let iaJson = null;
       let iaText = '';
       try {
-        const prompt = `Você é uma assistente financeira chamada Thayná, do sistema Anota Grana. Analise a frase do usuário e responda APENAS em JSON válido, sem explicações. Sempre que possível, extraia valor, categoria, conta, período, etc. Exemplos:\nUsuário: Acabei de gastar 80 reais em unha\nResposta: {\"intencao\":\"registrar_gasto\",\"valor\":80,\"categoria\":\"unha\"}\nUsuário: Gastei 30 reais no restaurante\nResposta: {\"intencao\":\"registrar_gasto\",\"valor\":30,\"categoria\":\"restaurante\"}\nUsuário: Quanto gastei esse mês?\nResposta: {\"intencao\":\"consulta_gastos_mes\"}\nUsuário: Quanto tenho na minha conta Nubank?\nResposta: {\"intencao\":\"consulta_saldo\",\"conta\":\"Nubank\"}\nUsuário: Quais contas tenho a pagar esse mês?\nResposta: {\"intencao\":\"consulta_contas_a_pagar_mes\"}\nUsuário: ${message}\nResposta:`;
+        const prompt = `Você é uma assistente financeira chamada Thayná, do sistema Anota Grana. Analise a frase do usuário e responda APENAS em JSON válido, sem explicações. Sempre que possível, extraia valor, categoria, conta, período, etc.\nSe não souber a intenção, retorne {\"intencao\":\"desconhecida\"}. Exemplos:\nUsuário: Acabei de gastar 80 reais em unha\nResposta: {\"intencao\":\"registrar_gasto\",\"valor\":80,\"categoria\":\"unha\"}\nUsuário: Gastei 30 reais no restaurante\nResposta: {\"intencao\":\"registrar_gasto\",\"valor\":30,\"categoria\":\"restaurante\"}\nUsuário: Quanto gastei esse mês?\nResposta: {\"intencao\":\"consulta_gastos_mes\"}\nUsuário: Quanto tenho na minha conta Nubank?\nResposta: {\"intencao\":\"consulta_saldo\",\"conta\":\"Nubank\"}\nUsuário: Quais contas tenho a pagar esse mês?\nResposta: {\"intencao\":\"consulta_contas_a_pagar_mes\"}\nUsuário: Oi\nResposta: {\"intencao\":\"saudacao\"}\nUsuário: ${message}\nResposta:`;
         console.log('[WHATSAPP][IA][REQUEST]', prompt);
         const iaRes = await axios.post(
           'https://api.openai.com/v1/chat/completions',
@@ -79,6 +79,23 @@ app.post('/webhook-whats', async (req, res) => {
           console.error('[WHATSAPP][IA][ERRO RESPONSE DATA]', e.response.data);
         }
         iaJson = null;
+      }
+      // LOG EXTRA: Mostrar mensagem recebida e JSON final
+      console.log('[WHATSAPP][DEBUG][MSG RECEBIDA]', message);
+      console.log('[WHATSAPP][DEBUG][IA JSON FINAL]', iaJson);
+      // Fallback manual para saudações se vier vazio ou sem intencao
+      if (!iaJson || !iaJson.intencao) {
+        const msgLower = message.trim().toLowerCase();
+        const saudacoes = ['oi', 'olá', 'ola', 'bom dia', 'boa tarde', 'boa noite', 'eae', 'opa', 'salve'];
+        if (saudacoes.some(s => msgLower.startsWith(s))) {
+          iaJson = { intencao: 'saudacao' };
+          iaText = 'Olá! Como posso te ajudar hoje?';
+          console.log('[WHATSAPP][FALLBACK][SAUDACAO DETECTADA MANUAL]');
+        } else {
+          iaJson = { intencao: 'desconhecida' };
+          iaText = 'Desculpe, não consegui entender sua solicitação.';
+          console.log('[WHATSAPP][FALLBACK][DESCONHECIDA]');
+        }
       }
       // 2. Executa ação real conforme intenção
       if (iaJson && iaJson.intencao === 'registrar_gasto' && iaJson.valor) {
