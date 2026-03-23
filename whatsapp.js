@@ -36,12 +36,20 @@ app.post('/enviar-whats', async (req, res) => {
 
 // Webhook para receber mensagens do WhatsApp (configure na W-API)
 app.post('/webhook-whats', async (req, res) => {
-  const { phone, message } = req.body;
+  let { phone, message } = req.body;
+  // Remove sufixos como @c.us, @lid, etc.
+  const cleanPhone = (phone || '').replace(/@.*/, '');
   console.log('[WHATSAPP][WEBHOOK] Mensagem recebida:', phone, message);
+  // Lista de telefones autorizados (adicione outros se necessário)
+  const PHONES_AUTORIZADOS = ['11986387651', '5511986387651'];
+  if (!message || !PHONES_AUTORIZADOS.includes(cleanPhone)) {
+    console.log('[WHATSAPP][WEBHOOK] Ignorando mensagem automática ou número não autorizado:', { phone, message });
+    return res.json({ status: 'ignorado', motivo: 'mensagem automática ou número não autorizado', phone, message });
+  }
   let resposta = '';
   if (message) {
-    // Busca usuário pelo telefone
-    const user = await User.findOne({ where: { phone } });
+    // Busca usuário pelo telefone limpo
+    const user = await User.findOne({ where: { phone: cleanPhone } });
     if (!user) {
       resposta = 'Usuário não encontrado.';
     } else {
