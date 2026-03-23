@@ -36,8 +36,12 @@ app.post('/enviar-whats', async (req, res) => {
 
 // Webhook para receber mensagens do WhatsApp (configure na W-API)
 app.post('/webhook-whats', async (req, res) => {
-  let { phone, message } = req.body;
-  // Remove sufixos como @c.us, @lid, etc.
+  // Log para debug
+  console.log('[WEBHOOK-WHATS][DEBUG][PAYLOAD RECEBIDO]', JSON.stringify(req.body));
+
+  // Extrai o número e a mensagem de diferentes formatos possíveis
+  let phone = req.body.phone || (req.body.sender && req.body.sender.id) || (req.body.chat && req.body.chat.id) || null;
+  let message = req.body.message || (req.body.msgContent && req.body.msgContent.conversation) || null;
   const cleanPhone = (phone || '').replace(/@.*/, '');
   console.log('[WHATSAPP][WEBHOOK] Mensagem recebida:', phone, message);
   // Lista de telefones autorizados (adicione outros se necessário)
