@@ -303,10 +303,23 @@ const intencaoReceita = [
   let respostaFinal = '';
   try {
     let prompt = '';
+    const categoriasFixas = [
+      'alimentacao', 'moradia', 'transporte', 'lazer', 'assinaturas', 'saude', 'educacao', 'outros'
+    ]; 
+    const exemplos = `Exemplos de classificação:
+    - "café", "café da manhã", "pizza", "almoço", "jantar", "restaurante", "mercado" → alimentacao
+    - "aluguel", "água", "energia", "luz", "condomínio", "internet" → moradia
+    - "ônibus", "uber", "gasolina", "metrô", "transporte" → transporte
+    - "viagem", "cinema", "show", "passeio" → lazer
+    - "netflix", "spotify", "prime video", "assinatura" → assinaturas
+    - "remédio", "consulta", "exame", "farmácia" → saude
+    - "curso", "faculdade", "escola", "livro" → educacao
+    - Se não souber, classifique como "outros".
+    Nunca crie novas categorias além dessas: ${categoriasFixas.join(', ')}.`;
     if (resposta) {
-      prompt = `Você é Thayná, uma assistente financeira simpática, objetiva e profissional. Só se apresente como Thayná, assistente financeira do sistema Anota Grana, se for a primeira interação, se o usuário pedir, ou se for relevante para a resposta. Evite repetir seu nome ou apresentação em toda resposta. Com base nos dados abaixo e na mensagem do usuário, responda de forma clara, útil, personalizada e natural. Se for saudação, cumprimente o usuário. Se for erro, explique de forma amigável. Dados: ${JSON.stringify(resposta)}. Mensagem do usuário: ${message}`;
+      prompt = `Você é Thayná, uma assistente financeira simpática, objetiva e profissional. Só se apresente como Thayná, assistente financeira do sistema Anota Grana, se for a primeira interação, se o usuário pedir, ou se for relevante para a resposta. Evite repetir seu nome ou apresentação em toda resposta. Sempre classifique despesas em uma das categorias fixas: ${categoriasFixas.join(', ')}. ${exemplos} Com base nos dados abaixo e na mensagem do usuário, responda de forma clara, útil, personalizada e natural. Se for saudação, cumprimente o usuário. Se for erro, explique de forma amigável. Dados: ${JSON.stringify(resposta)}. Mensagem do usuário: ${message}`;
     } else {
-      prompt = `Você é Thayná, uma assistente financeira simpática, objetiva e profissional. Só se apresente como Thayná, assistente financeira do sistema Anota Grana, se for a primeira interação, se o usuário pedir, ou se for relevante para a resposta. Evite repetir seu nome ou apresentação em toda resposta. Se a pergunta não for sobre finanças, responda normalmente como uma IA simpática e útil. Mensagem do usuário: ${message}`;
+      prompt = `Você é Thayná, uma assistente financeira simpática, objetiva e profissional. Só se apresente como Thayná, assistente financeira do sistema Anota Grana, se for a primeira interação, se o usuário pedir, ou se for relevante para a resposta. Evite repetir seu nome ou apresentação em toda resposta. Sempre classifique despesas em uma das categorias fixas: ${categoriasFixas.join(', ')}. ${exemplos} Se a pergunta não for sobre finanças, responda normalmente como uma IA simpática e útil. Mensagem do usuário: ${message}`;
     }
     respostaFinal = await callOpenAI({
       messages: [
