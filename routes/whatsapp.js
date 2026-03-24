@@ -243,8 +243,19 @@ const intencaoReceita = [
       }
 
     } else if (intent.intencao === 'consulta_contas') {
-      const contas = await Account.findAll({ where: { user_id: user.id } });
-      resposta = { tipo: 'consulta_contas', contas: contas.map(c => c.name) };
+      if (intent.conta) {
+        // Se especificou uma conta, retorna saldo dessa conta
+        const conta = await Account.findOne({ where: { user_id: user.id, name: intent.conta } });
+        if (conta) {
+          resposta = { tipo: 'consulta_contas', contas: [{ conta: conta.name, saldo: conta.balance }] };
+        } else {
+          resposta = { tipo: 'consulta_contas', contas: [] };
+        }
+      } else {
+        // Se não especificou, retorna todas as contas com saldo
+        const contas = await Account.findAll({ where: { user_id: user.id } });
+        resposta = { tipo: 'consulta_contas', contas: contas.map(c => ({ conta: c.name, saldo: c.balance })) };
+      }
     } else if (intent.intencao === 'consulta_saldo') {
       let conta = null;
       if (intent.conta) {
