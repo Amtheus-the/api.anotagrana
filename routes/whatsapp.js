@@ -142,45 +142,32 @@ const intencaoReceita = [
       return res.json({ status: 'erro', motivo: 'usuário não encontrado', phone });
     }
     console.log('[WEBHOOK-WHATS] Usuário encontrado:', user.id);
+
+    // --- REGISTRAR RECEITA ---
     if (intencaoReceita.includes(intent.intencao)) {
-      // Se especificou conta, busca pelo nome; senão, pega a conta principal (isMain) ou a primeira conta
+      // ...código existente para receita...
       let conta = null;
       let avisarContaPadrao = false;
       if (intent.conta) {
         conta = await Account.findOne({ where: { user_id: user.id, name: intent.conta } });
         if (!conta) {
-          console.log('[WHATSAPP][DEBUG] Conta informada não encontrada:', intent.conta);
           conta = await Account.findOne({ where: { user_id: user.id, isMain: 1 } });
           if (!conta) {
-            console.log('[WHATSAPP][DEBUG] Conta principal não encontrada, buscando primeira conta cadastrada');
             conta = await Account.findOne({ where: { user_id: user.id }, order: [['id', 'ASC']] });
-          } else {
-            console.log('[WHATSAPP][DEBUG] Conta principal encontrada:', conta.name);
           }
           avisarContaPadrao = true;
         }
       } else {
         conta = await Account.findOne({ where: { user_id: user.id, isMain: 1 } });
         if (!conta) {
-          console.log('[WHATSAPP][DEBUG] Conta principal não encontrada, buscando primeira conta cadastrada');
           conta = await Account.findOne({ where: { user_id: user.id }, order: [['id', 'ASC']] });
-        } else {
-          console.log('[WHATSAPP][DEBUG] Conta principal encontrada:', conta.name);
         }
         avisarContaPadrao = true;
       }
-      console.log('[WEBHOOK-WHATS] Conta selecionada:', conta ? conta.name : 'Nenhuma', '| isMain:', conta ? conta.isMain : 'N/A');
       if (conta) {
         if (typeof intent.valor !== 'number' || isNaN(intent.valor)) {
           resposta = 'Por favor, informe o valor da receita para registrar corretamente.';
         } else {
-          console.log('[DEBUG] Antes de criar transação:', {
-            userId: user.id,
-            accountId: conta.id,
-            valor: intent.valor,
-            saldoAtual: conta.balance,
-            nomeConta: conta.name
-          });
           await Transaction.create({
             user_id: user.id,
             accountId: conta.id,
@@ -191,24 +178,62 @@ const intencaoReceita = [
             date: new Date(),
             description: message
           });
-          console.log('[DEBUG] Transação criada. Atualizando saldo...');
-          const saldoAntes = conta.balance;
           conta.balance = (conta.balance || 0) + Number(intent.valor);
-          console.log('[DEBUG] Saldo antes:', saldoAntes, '| Valor:', intent.valor, '| Saldo depois:', conta.balance);
           await conta.save();
-          resposta = 'Receita registrada com sucesso!';
-        }
-        console.log('[DEBUG] Conta salva:', {
-          id: conta.id,
-          saldoFinal: conta.balance
-        });
-        resposta = `Receita de R$ ${intent.valor} registrada na conta ${conta.name}. Saldo atualizado.`;
-        if (avisarContaPadrao) {
-          resposta += ' (Lançado na conta principal. Se quiser lançar em outra, informe o nome da conta na mensagem)';
+          resposta = `Receita de R$ ${intent.valor} registrada na conta ${conta.name}. Saldo atualizado.`;
+          if (avisarContaPadrao) {
+            resposta += ' (Lançado na conta principal. Se quiser lançar em outra, informe o nome da conta na mensagem)';
+          }
         }
       } else {
         resposta = 'Não foi possível identificar uma conta para registrar a receita.';
       }
+
+    // --- REGISTRAR DESPESA (GASTO) ---
+    } else if (intent.intencao === 'registrar_gasto') {
+      let conta = null;
+      let avisarContaPadrao = false;
+      if (intent.conta) {
+        conta = await Account.findOne({ where: { user_id: user.id, name: intent.conta } });
+        if (!conta) {
+          conta = await Account.findOne({ where: { user_id: user.id, isMain: 1 } });
+          if (!conta) {
+            conta = await Account.findOne({ where: { user_id: user.id }, order: [['id', 'ASC']] });
+          }
+          avisarContaPadrao = true;
+        }
+      } else {
+        conta = await Account.findOne({ where: { user_id: user.id, isMain: 1 } });
+        if (!conta) {
+          conta = await Account.findOne({ where: { user_id: user.id }, order: [['id', 'ASC']] });
+        }
+        avisarContaPadrao = true;
+      }
+      if (conta) {
+        if (typeof intent.valor !== 'number' || isNaN(intent.valor)) {
+          resposta = 'Por favor, informe o valor do gasto para registrar corretamente.';
+        } else {
+          await Transaction.create({
+            user_id: user.id,
+            accountId: conta.id,
+            type: 'expense',
+            amount: intent.valor,
+            category: intent.categoria || 'despesa',
+            account_name: conta.name,
+            date: new Date(),
+            description: message
+          });
+          conta.balance = (conta.balance || 0) - Number(intent.valor);
+          await conta.save();
+          resposta = `Despesa de R$ ${intent.valor} registrada na conta ${conta.name}. Saldo atualizado.`;
+          if (avisarContaPadrao) {
+            resposta += ' (Lançado na conta principal. Se quiser lançar em outra, informe o nome da conta na mensagem)';
+          }
+        }
+      } else {
+        resposta = 'Não foi possível identificar uma conta para registrar a despesa.';
+      }
+
     } else if (intent.intencao === 'consulta_contas') {
   const contas = await Account.findAll({ where: { user_id: user.id } });
   resposta = `Suas contas cadastradas: ${contas.map(c => c.name).join(', ')}.`;
