@@ -246,11 +246,16 @@ const intencaoReceita = [
       const contas = await Account.findAll({ where: { user_id: user.id } });
       resposta = { tipo: 'consulta_contas', contas: contas.map(c => c.name) };
     } else if (intent.intencao === 'consulta_saldo') {
-      const conta = intent.conta ? await Account.findOne({ where: { user_id: user.id, name: intent.conta } }) : null;
-      if (conta) {
-        resposta = { tipo: 'consulta_saldo', conta: conta.name, saldo: conta.balance };
+      let conta = null;
+      if (intent.conta) {
+        conta = await Account.findOne({ where: { user_id: user.id, name: intent.conta } });
+      }
+      if (!conta) {
+        // Se não especificou conta, retorna todas as contas do usuário com saldo
+        const contas = await Account.findAll({ where: { user_id: user.id } });
+        resposta = { tipo: 'consulta_saldo', contas: contas.map(c => ({ conta: c.name, saldo: c.balance })) };
       } else {
-        resposta = { tipo: 'consulta_saldo', saldo: user.saldo };
+        resposta = { tipo: 'consulta_saldo', conta: conta.name, saldo: conta.balance };
       }
     } else if (intent.intencao === 'consulta_gastos_mes') {
       const gastos = await Transaction.findAll({ where: { user_id: user.id, type: 'expense', date: { [Op.gte]: literal("DATE_FORMAT(NOW(), '%Y-%m-01')") } } });
@@ -274,9 +279,9 @@ const intencaoReceita = [
   try {
     let prompt = '';
     if (resposta) {
-      prompt = `Você é Thayná, uma assistente financeira simpática, objetiva e profissional. Sempre se apresente como Thayná, assistente financeira do sistema Anota Grana. Com base nos dados abaixo e na mensagem do usuário, responda de forma clara, útil, personalizada e natural. Se for saudação, cumprimente o usuário. Se for erro, explique de forma amigável. Dados: ${JSON.stringify(resposta)}. Mensagem do usuário: ${message}`;
+      prompt = `Você é Thayná, uma assistente financeira simpática, objetiva e profissional. Só se apresente como Thayná, assistente financeira do sistema Anota Grana, se for a primeira interação, se o usuário pedir, ou se for relevante para a resposta. Evite repetir seu nome ou apresentação em toda resposta. Com base nos dados abaixo e na mensagem do usuário, responda de forma clara, útil, personalizada e natural. Se for saudação, cumprimente o usuário. Se for erro, explique de forma amigável. Dados: ${JSON.stringify(resposta)}. Mensagem do usuário: ${message}`;
     } else {
-      prompt = `Você é Thayná, uma assistente financeira simpática, objetiva e profissional. Sempre se apresente como Thayná, assistente financeira do sistema Anota Grana. Se a pergunta não for sobre finanças, responda normalmente como uma IA simpática e útil. Mensagem do usuário: ${message}`;
+      prompt = `Você é Thayná, uma assistente financeira simpática, objetiva e profissional. Só se apresente como Thayná, assistente financeira do sistema Anota Grana, se for a primeira interação, se o usuário pedir, ou se for relevante para a resposta. Evite repetir seu nome ou apresentação em toda resposta. Se a pergunta não for sobre finanças, responda normalmente como uma IA simpática e útil. Mensagem do usuário: ${message}`;
     }
     respostaFinal = await callOpenAI({
       messages: [
