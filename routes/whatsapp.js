@@ -134,6 +134,10 @@ const intencaoReceita = [
   const intent = await interpretarMensagemComIA(message);
   console.log('[WEBHOOK-WHATS] Intenção identificada pela IA:', intent);
   if (intent) {
+    // Saudação simpática
+    if (intent.intencao === 'saudacao') {
+      resposta = 'Olá! Eu sou a Thayná, sua assistente financeira. Como posso te ajudar hoje?';
+    }
     const User = require('../models/User');
     // Buscar usuário pelo telefone
     const user = await User.findOne({ where: { phone: phone } });
