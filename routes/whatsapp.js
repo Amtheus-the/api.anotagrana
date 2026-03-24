@@ -79,29 +79,7 @@ router.post('/webhook-whats', async (req, res) => {
   const msgLower = (message || '').toLowerCase().normalize('NFD').replace(/[^\w\s]/g, '');
   const saudacoes = ['oi', 'olá', 'ola', 'bom dia', 'boa tarde', 'boa noite', 'eai', 'opa', 'salve'];
   if (saudacoes.some(s => msgLower.startsWith(s))) {
-    resposta = 'Olá! Eu sou a Thayná, sua assistente financeira. Como posso te ajudar hoje?';
-    // Envia resposta e encerra
-    try {
-      const url = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
-      const payload = {
-        phone,
-        message: resposta
-      };
-      const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.TOKEN}`,
-      };
-      console.log('[WEBHOOK-WHATS][DEBUG] Enviando resposta para WhatsApp:', { url, payload, headers });
-      const resp = await axios.post(url, payload, { headers });
-      console.log('[WEBHOOK-WHATS][DEBUG] Resposta da API WhatsApp:', resp.data);
-    } catch (err) {
-      if (err.response) {
-        console.error('[WEBHOOK-WHATS][ERRO] Erro ao enviar resposta:', err.message, '| Status:', err.response.status, '| Data:', err.response.data);
-      } else {
-        console.error('[WEBHOOK-WHATS][ERRO] Erro ao enviar resposta:', err.message);
-      }
-    }
-    return res.json({ status: 'sucesso', resposta });
+    resposta = { tipo: 'saudacao' };
   }
 
   async function interpretarMensagemComIA(msg) {
@@ -165,7 +143,7 @@ const intencaoReceita = [
   if (intent) {
     // Saudação simpática
     if (intent.intencao === 'saudacao') {
-      resposta = 'Olá! Eu sou a Thayná, sua assistente financeira. Como posso te ajudar hoje?';
+      resposta = { tipo: 'saudacao' };
     }
     const User = require('../models/User');
     // Buscar usuário pelo telefone
@@ -178,7 +156,6 @@ const intencaoReceita = [
 
     // --- REGISTRAR RECEITA ---
     if (intencaoReceita.includes(intent.intencao)) {
-      // ...código existente para receita...
       let conta = null;
       let avisarContaPadrao = false;
       if (intent.conta) {
@@ -197,29 +174,28 @@ const intencaoReceita = [
         }
         avisarContaPadrao = true;
       }
-      if (conta) {
-        if (typeof intent.valor !== 'number' || isNaN(intent.valor)) {
-          resposta = 'Por favor, informe o valor da receita para registrar corretamente.';
-        } else {
-          await Transaction.create({
-            user_id: user.id,
-            accountId: conta.id,
-            type: 'income',
-            amount: intent.valor,
-            category: intent.categoria || 'receita',
-            account_name: conta.name,
-            date: new Date(),
-            description: message
-          });
-          conta.balance = (conta.balance || 0) + Number(intent.valor);
-          await conta.save();
-          resposta = `Receita de R$ ${intent.valor} registrada na conta ${conta.name}. Saldo atualizado.`;
-          if (avisarContaPadrao) {
-            resposta += ' (Lançado na conta principal. Se quiser lançar em outra, informe o nome da conta na mensagem)';
-          }
-        }
+      if (conta && typeof intent.valor === 'number' && !isNaN(intent.valor)) {
+        await Transaction.create({
+          user_id: user.id,
+          accountId: conta.id,
+          type: 'income',
+          amount: intent.valor,
+          category: intent.categoria || 'receita',
+          account_name: conta.name,
+          date: new Date(),
+          description: message
+        });
+        conta.balance = (conta.balance || 0) + Number(intent.valor);
+        await conta.save();
+        resposta = {
+          tipo: 'registrar_receita',
+          valor: intent.valor,
+          categoria: intent.categoria || 'receita',
+          conta: conta.name,
+          saldo: conta.balance
+        };
       } else {
-        resposta = 'Não foi possível identificar uma conta para registrar a receita.';
+        resposta = { tipo: 'erro', motivo: 'Não foi possível registrar a receita. Conta não encontrada ou valor inválido.' };
       }
 
     // --- REGISTRAR DESPESA (GASTO) ---
@@ -242,64 +218,70 @@ const intencaoReceita = [
         }
         avisarContaPadrao = true;
       }
-      if (conta) {
-        if (typeof intent.valor !== 'number' || isNaN(intent.valor)) {
-          resposta = 'Por favor, informe o valor do gasto para registrar corretamente.';
-        } else {
-          await Transaction.create({
-            user_id: user.id,
-            accountId: conta.id,
-            type: 'expense',
-            amount: intent.valor,
-            category: intent.categoria || 'despesa',
-            account_name: conta.name,
-            date: new Date(),
-            description: message
-          });
-          conta.balance = (conta.balance || 0) - Number(intent.valor);
-          await conta.save();
-          resposta = `Despesa de R$ ${intent.valor} registrada na conta ${conta.name}. Saldo atualizado.`;
-          if (avisarContaPadrao) {
-            resposta += ' (Lançado na conta principal. Se quiser lançar em outra, informe o nome da conta na mensagem)';
-          }
-        }
+      if (conta && typeof intent.valor === 'number' && !isNaN(intent.valor)) {
+        await Transaction.create({
+          user_id: user.id,
+          accountId: conta.id,
+          type: 'expense',
+          amount: intent.valor,
+          category: intent.categoria || 'despesa',
+          account_name: conta.name,
+          date: new Date(),
+          description: message
+        });
+        conta.balance = (conta.balance || 0) - Number(intent.valor);
+        await conta.save();
+        resposta = {
+          tipo: 'registrar_gasto',
+          valor: intent.valor,
+          categoria: intent.categoria || 'despesa',
+          conta: conta.name,
+          saldo: conta.balance
+        };
       } else {
-        resposta = 'Não foi possível identificar uma conta para registrar a despesa.';
+        resposta = { tipo: 'erro', motivo: 'Não foi possível registrar a despesa. Conta não encontrada ou valor inválido.' };
       }
 
     } else if (intent.intencao === 'consulta_contas') {
-  const contas = await Account.findAll({ where: { user_id: user.id } });
-  resposta = `Suas contas cadastradas: ${contas.map(c => c.name).join(', ')}.`;
+      const contas = await Account.findAll({ where: { user_id: user.id } });
+      resposta = { tipo: 'consulta_contas', contas: contas.map(c => c.name) };
     } else if (intent.intencao === 'consulta_saldo') {
-  const conta = intent.conta ? await Account.findOne({ where: { user_id: user.id, name: intent.conta } }) : null;
+      const conta = intent.conta ? await Account.findOne({ where: { user_id: user.id, name: intent.conta } }) : null;
       if (conta) {
-        resposta = `O saldo da sua conta ${conta.name} é ${conta.saldo}.`;
+        resposta = { tipo: 'consulta_saldo', conta: conta.name, saldo: conta.balance };
       } else {
-        resposta = `Seu saldo é ${user.saldo}.`;
+        resposta = { tipo: 'consulta_saldo', saldo: user.saldo };
       }
     } else if (intent.intencao === 'consulta_gastos_mes') {
-  const gastos = await Transaction.findAll({ where: { user_id: user.id, type: 'expense', date: { [Op.gte]: literal("DATE_FORMAT(NOW(), '%Y-%m-01')") } } });
-  resposta = `Seus gastos este mês foram: ${gastos.map(g => `${g.valor} (${g.category})`).join(', ')}.`;
-    } else if (intent.intencao === 'consulta_categoria_mais_gasta_mes') {
-  const categoria = await Transaction.findOne({ where: { user_id: user.id, type: 'expense', date: { [Op.gte]: literal("DATE_FORMAT(NOW(), '%Y-%m-01')") } }, attributes: ['category', [sequelize.fn('sum', sequelize.col('valor')), 'total']], group: ['category'], order: [[sequelize.fn('sum', sequelize.col('valor')), 'DESC']], limit: 1 });
-  resposta = `A categoria que você mais gastou esse mês foi ${categoria.category} (${categoria.total}).`;
+      const gastos = await Transaction.findAll({ where: { user_id: user.id, type: 'expense', date: { [Op.gte]: literal("DATE_FORMAT(NOW(), '%Y-%m-01')") } } });
+      resposta = { tipo: 'consulta_gastos_mes', gastos: gastos.map(g => ({ valor: g.amount, categoria: g.category })) };
     } else if (intent.intencao === 'consulta_faturamento_mes') {
-  const faturamento = await Transaction.findAll({ where: { user_id: user.id, type: 'income', date: { [Op.gte]: literal("DATE_FORMAT(NOW(), '%Y-%m-01')") } } });
-  resposta = `Seu faturamento este mês foi: ${faturamento.map(f => `${f.valor} (${f.category})`).join(', ')}.`;
+      const faturamento = await Transaction.findAll({ where: { user_id: user.id, type: 'income', date: { [Op.gte]: literal("DATE_FORMAT(NOW(), '%Y-%m-01')") } } });
+      resposta = { tipo: 'consulta_faturamento_mes', receitas: faturamento.map(f => ({ valor: f.amount, categoria: f.category })) };
     } else {
-      resposta = 'Desculpe, não consegui entender sua solicitação.';
+      resposta = { tipo: 'erro', motivo: 'Desculpe, não consegui entender sua solicitação.' };
     }
   } else {
-    resposta = 'Desculpe, não consegui entender sua solicitação.';
+    resposta = { tipo: 'erro', motivo: 'Desculpe, não consegui entender sua solicitação.' };
   }
 
 
   // Enviar resposta de volta pelo WhatsApp (usando a W-API)
+  // Chamar a IA para montar a resposta final
+  let respostaFinal = '';
   try {
+    const prompt = `Você é Thayná, uma assistente financeira simpática, objetiva e profissional. Sempre se apresente como Thayná, assistente financeira do sistema Anota Grana. Com base nos dados abaixo e na mensagem do usuário, responda de forma clara, útil, personalizada e natural. Se for saudação, cumprimente o usuário. Se for erro, explique de forma amigável. Dados: ${JSON.stringify(resposta)}. Mensagem do usuário: ${message}`;
+    respostaFinal = await callOpenAI({
+      messages: [
+        { role: 'system', content: prompt }
+      ],
+      max_tokens: 200,
+      apiKey: OPENAI_KEY
+    });
     const url = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
     const payload = {
       phone,
-      message: resposta
+      message: respostaFinal
     };
     const headers = {
       'Content-Type': 'application/json',
@@ -314,9 +296,10 @@ const intencaoReceita = [
     } else {
       console.error('[WEBHOOK-WHATS][ERRO] Erro ao enviar resposta:', err.message);
     }
+    respostaFinal = 'Desculpe, não consegui gerar uma resposta no momento.';
   }
 
-  res.json({ status: 'sucesso', resposta });
+  res.json({ status: 'sucesso', resposta: respostaFinal });
 });
 
 // Aqui você pode adicionar outras rotas relacionadas ao WhatsApp/IA
