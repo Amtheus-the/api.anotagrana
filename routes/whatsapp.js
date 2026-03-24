@@ -256,6 +256,20 @@ const intencaoReceita = [
         const contas = await Account.findAll({ where: { user_id: user.id } });
         resposta = { tipo: 'consulta_contas', contas: contas.map(c => ({ conta: c.name, saldo: c.balance })) };
       }
+    } else if (
+      intent.intencao === 'consulta_despesas' ||
+      intent.intencao === 'consulta_despesa' ||
+      intent.intencao === 'consulta_gastos' ||
+      intent.intencao === 'consulta_gasto'
+    ) {
+      // Consulta despesas totais do usuário
+      const totalDespesas = await Transaction.sum('amount', { where: { user_id: user.id, type: 'expense' } });
+      const despesas = await Transaction.findAll({ where: { user_id: user.id, type: 'expense' }, order: [['date', 'DESC']] });
+      resposta = {
+        tipo: 'consulta_despesas',
+        total: totalDespesas || 0,
+        despesas: despesas.map(d => ({ valor: d.amount, categoria: d.category, conta: d.account_name, data: d.date }))
+      };
     } else if (intent.intencao === 'consulta_saldo') {
       let conta = null;
       if (intent.conta) {
