@@ -75,6 +75,35 @@ router.post('/webhook-whats', async (req, res) => {
   console.log('[WEBHOOK-WHATS] message:', message);
   let resposta = '';
 
+  // Fallback para saudações simples ANTES de chamar a IA
+  const msgLower = (message || '').toLowerCase().normalize('NFD').replace(/[^\w\s]/g, '');
+  const saudacoes = ['oi', 'olá', 'ola', 'bom dia', 'boa tarde', 'boa noite', 'eai', 'opa', 'salve'];
+  if (saudacoes.some(s => msgLower.startsWith(s))) {
+    resposta = 'Olá! Eu sou a Thayná, sua assistente financeira. Como posso te ajudar hoje?';
+    // Envia resposta e encerra
+    try {
+      const url = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
+      const payload = {
+        phone,
+        message: resposta
+      };
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.TOKEN}`,
+      };
+      console.log('[WEBHOOK-WHATS][DEBUG] Enviando resposta para WhatsApp:', { url, payload, headers });
+      const resp = await axios.post(url, payload, { headers });
+      console.log('[WEBHOOK-WHATS][DEBUG] Resposta da API WhatsApp:', resp.data);
+    } catch (err) {
+      if (err.response) {
+        console.error('[WEBHOOK-WHATS][ERRO] Erro ao enviar resposta:', err.message, '| Status:', err.response.status, '| Data:', err.response.data);
+      } else {
+        console.error('[WEBHOOK-WHATS][ERRO] Erro ao enviar resposta:', err.message);
+      }
+    }
+    return res.json({ status: 'sucesso', resposta });
+  }
+
   async function interpretarMensagemComIA(msg) {
     try {
   const prompt = `Você é um assistente financeiro. Analise a frase do usuário e responda APENAS em JSON, sem explicações.\n\nRegras:\n- Sempre extraia o valor exato mencionado, mesmo que seja '500 reais', 'R$ 500', 'cinco mil', etc.\n- Se o valor estiver escrito por extenso, converta para número.\n- Não arredonde, não invente valores.\n- Se o usuário mencionar salário, recebimento, faturamento, entrada de dinheiro, pagamento, dinheiro pingando, dinheiro caiu, dinheiro entrou, qualquer frase sobre dinheiro entrando, sempre responda com uma das intenções: registrar_receita, registrar_recebimento, receber_salario, entrada_dinheiro, faturamento, receber_pagamento, receber_comissao, receber_bonus, receber_rendimento, receber_valor. Nunca apenas com saudação.\n- Se o usuário mencionar o nome de uma conta (ex: 'na conta Banco do Brasil', 'na conta Bradesco', 'lance na conta X'), extraia o nome da conta no campo 'conta'.\n- Se o usuário perguntar saldo de uma conta específica, extraia o nome da conta no campo 'conta'.\n- Se o usuário perguntar quantas contas tem ou quais contas tem, responda com {\"intencao\":\"consulta_contas\"}.\n- Se o usuário perguntar quanto gastou esse mês, quanto foi gasto esse mês, ou variações, responda com {\"intencao\":\"consulta_gastos_mes\"}.\n- Se o usuário perguntar \"com o que mais gastei?\", \"qual categoria mais gastei?\" ou variações, responda com {\"intencao\":\"consulta_categoria_mais_gasta_mes\"}.\n- Se o usuário perguntar quanto faturei esse mês, quanto ganhei esse mês, quanto entrou esse mês, quanto pingou esse mês, quanto recebi esse mês, ou variações, responda com {\"intencao\":\"consulta_faturamento_mes\"}.\n\nExemplos:\nUsuário: Meu salário caiu hoje\nResposta: {\"intencao\":\"receber_salario\",\"valor\":3000,\"categoria\":\"salário\"}\nUsuário: Recebi 5000 de comissão\nResposta: {\"intencao\":\"receber_comissao\",\"valor\":5000,\"categoria\":\"comissão\"}\nUsuário: Entrou 200 reais na minha conta\nResposta: {\"intencao\":\"entrada_dinheiro\",\"valor\":200}\nUsuário: Faturei 10 mil esse mês\nResposta: {\"intencao\":\"faturamento\",\"valor\":10000,\"categoria\":\"faturamento\"}\nUsuário: Dinheiro pingou na conta\nResposta: {\"intencao\":\"entrada_dinheiro\",\"valor\":3000}\nUsuário: Gastei 30 reais no mercado\nResposta: {\"intencao\":\"registrar_gasto\",\"valor\":30,\"categoria\":\"mercado\"}\nUsuário: Recebi 1000 de salário\nResposta: {\"intencao\":\"receber_salario\",\"valor\":1000,\"categoria\":\"salário\"}\nUsuário: Acabei de tomar um café de 500 reais\nResposta: {\"intencao\":\"registrar_gasto\",\"valor\":500,\"categoria\":\"café\"}\nUsuário: Paguei cinco mil de aluguel\nResposta: {\"intencao\":\"registrar_gasto\",\"valor\":5000,\"categoria\":\"aluguel\"}\nUsuário: Meu salário de 3 mil caiu na conta Bradesco\nResposta: {\"intencao\":\"receber_salario\",\"valor\":3000,\"categoria\":\"salário\",\"conta\":\"Bradesco\"}\nUsuário: Lance meu salário na conta Banco do Brasil\nResposta: {\"intencao\":\"receber_salario\",\"valor\":3000,\"categoria\":\"salário\",\"conta\":\"Banco do Brasil\"}\nUsuário: Acabei de gastar 80 reais em gasolina\nResposta: {\"intencao\":\"registrar_gasto\",\"valor\":80,\"categoria\":\"gasolina\"}\nUsuário: Quais caixinhas eu tenho?\nResposta: {\"intencao\":\"consulta_caixinhas\"}\nUsuário: ${msg}\nResposta:`;
