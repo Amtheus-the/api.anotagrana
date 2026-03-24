@@ -39,6 +39,7 @@ router.post('/webhook-whats', async (req, res) => {
   const Investment = require('../models/Investment');
   const MoneyBox = require('../models/MoneyBox');
   const Transaction = require('../models/Transaction');
+  const User = require('../models/User');
 
   let phone = null;
   let message = null;
@@ -56,18 +57,22 @@ router.post('/webhook-whats', async (req, res) => {
       message = body.msgContent.extendedTextMessage.text;
     }
   }
-  // Filtro para evitar loop: só processa mensagens com texto e phone igual ao autorizado (sem sufixos)
-  const PHONES_AUTORIZADOS = ['11986387651', '5511986387651'];
+
+  // Buscar todos os telefones cadastrados na tabela Users
+  let PHONES_AUTORIZADOS = [];
+  try {
+    const users = await User.findAll({ attributes: ['phone'] });
+    PHONES_AUTORIZADOS = users.map(u => String(u.phone));
+  } catch (e) {
+    console.error('[WEBHOOK-WHATS][ERRO] Falha ao buscar telefones autorizados:', e.message);
+  }
+
   if (!message || !PHONES_AUTORIZADOS.includes(phone)) {
     console.log('[WEBHOOK-WHATS][LOOP PROTECTION] Ignorando mensagem automática ou número não autorizado:', { phone, message });
     return res.json({ status: 'ignorado', motivo: 'mensagem automática ou número não autorizado', phone, message });
   }
   console.log('[WEBHOOK-WHATS] phone:', phone);
   console.log('[WEBHOOK-WHATS] message:', message);
-  if (phone !== '11986387651' && phone !== '5511986387651') {
-    console.log('[WEBHOOK-WHATS] Ignorando mensagem de número não autorizado:', phone);
-    return res.json({ status: 'ignorado', motivo: 'número não autorizado', phone });
-  }
   let resposta = '';
 
   async function interpretarMensagemComIA(msg) {
@@ -166,28 +171,33 @@ const intencaoReceita = [
       }
       console.log('[WEBHOOK-WHATS] Conta selecionada:', conta ? conta.name : 'Nenhuma', '| isMain:', conta ? conta.isMain : 'N/A');
       if (conta) {
-        console.log('[DEBUG] Antes de criar transação:', {
-          userId: user.id,
-          accountId: conta.id,
-          valor: intent.valor,
-          saldoAtual: conta.balance,
-          nomeConta: conta.name
-        });
-        await Transaction.create({
-          userId: user.id,
-          accountId: conta.id,
-          type: 'income',
-          amount: intent.valor,
-          category: intent.categoria || 'receita',
-          account_name: conta.name,
-          date: new Date(),
-          description: message
-        });
-        console.log('[DEBUG] Transação criada. Atualizando saldo...');
-        const saldoAntes = conta.balance;
-        conta.balance = (conta.balance || 0) + Number(intent.valor);
-        console.log('[DEBUG] Saldo antes:', saldoAntes, '| Valor:', intent.valor, '| Saldo depois:', conta.balance);
-        await conta.save();
+        if (typeof intent.valor !== 'number' || isNaN(intent.valor)) {
+          resposta = 'Por favor, informe o valor da receita para registrar corretamente.';
+        } else {
+          console.log('[DEBUG] Antes de criar transação:', {
+            userId: user.id,
+            accountId: conta.id,
+            valor: intent.valor,
+            saldoAtual: conta.balance,
+            nomeConta: conta.name
+          });
+          await Transaction.create({
+            user_id: user.id,
+            accountId: conta.id,
+            type: 'income',
+            amount: intent.valor,
+            category: intent.categoria || 'receita',
+            account_name: conta.name,
+            date: new Date(),
+            description: message
+          });
+          console.log('[DEBUG] Transação criada. Atualizando saldo...');
+          const saldoAntes = conta.balance;
+          conta.balance = (conta.balance || 0) + Number(intent.valor);
+          console.log('[DEBUG] Saldo antes:', saldoAntes, '| Valor:', intent.valor, '| Saldo depois:', conta.balance);
+          await conta.save();
+          resposta = 'Receita registrada com sucesso!';
+        }
         console.log('[DEBUG] Conta salva:', {
           id: conta.id,
           saldoFinal: conta.balance
@@ -200,24 +210,24 @@ const intencaoReceita = [
         resposta = 'Não foi possível identificar uma conta para registrar a receita.';
       }
     } else if (intent.intencao === 'consulta_contas') {
-      const contas = await Account.findAll({ where: { userId: user.id } });
-      resposta = `Suas contas cadastradas: ${contas.map(c => c.name).join(', ')}.`;
+  const contas = await Account.findAll({ where: { user_id: user.id } });
+  resposta = `Suas contas cadastradas: ${contas.map(c => c.name).join(', ')}.`;
     } else if (intent.intencao === 'consulta_saldo') {
-      const conta = intent.conta ? await Account.findOne({ where: { userId: user.id, name: intent.conta } }) : null;
+  const conta = intent.conta ? await Account.findOne({ where: { user_id: user.id, name: intent.conta } }) : null;
       if (conta) {
         resposta = `O saldo da sua conta ${conta.name} é ${conta.saldo}.`;
       } else {
         resposta = `Seu saldo é ${user.saldo}.`;
       }
     } else if (intent.intencao === 'consulta_gastos_mes') {
-      const gastos = await Transaction.findAll({ where: { userId: user.id, type: 'expense', createdAt: { [Op.gte]: literal('DATE_TRUNC(\'month\', NOW())') } } });
-      resposta = `Seus gastos este mês foram: ${gastos.map(g => `${g.valor} (${g.category})`).join(', ')}.`;
+  const gastos = await Transaction.findAll({ where: { user_id: user.id, type: 'expense', date: { [Op.gte]: literal("DATE_FORMAT(NOW(), '%Y-%m-01')") } } });
+  resposta = `Seus gastos este mês foram: ${gastos.map(g => `${g.valor} (${g.category})`).join(', ')}.`;
     } else if (intent.intencao === 'consulta_categoria_mais_gasta_mes') {
-      const categoria = await Transaction.findOne({ where: { userId: user.id, type: 'expense', createdAt: { [Op.gte]: literal('DATE_TRUNC(\'month\', NOW())') } }, attributes: ['category', [sequelize.fn('sum', sequelize.col('valor')), 'total']], group: ['category'], order: [[sequelize.fn('sum', sequelize.col('valor')), 'DESC']], limit: 1 });
-      resposta = `A categoria que você mais gastou esse mês foi ${categoria.category} (${categoria.total}).`;
+  const categoria = await Transaction.findOne({ where: { user_id: user.id, type: 'expense', date: { [Op.gte]: literal("DATE_FORMAT(NOW(), '%Y-%m-01')") } }, attributes: ['category', [sequelize.fn('sum', sequelize.col('valor')), 'total']], group: ['category'], order: [[sequelize.fn('sum', sequelize.col('valor')), 'DESC']], limit: 1 });
+  resposta = `A categoria que você mais gastou esse mês foi ${categoria.category} (${categoria.total}).`;
     } else if (intent.intencao === 'consulta_faturamento_mes') {
-      const faturamento = await Transaction.findAll({ where: { userId: user.id, type: 'income', createdAt: { [Op.gte]: literal('DATE_TRUNC(\'month\', NOW())') } } });
-      resposta = `Seu faturamento este mês foi: ${faturamento.map(f => `${f.valor} (${f.category})`).join(', ')}.`;
+  const faturamento = await Transaction.findAll({ where: { user_id: user.id, type: 'income', date: { [Op.gte]: literal("DATE_FORMAT(NOW(), '%Y-%m-01')") } } });
+  resposta = `Seu faturamento este mês foi: ${faturamento.map(f => `${f.valor} (${f.category})`).join(', ')}.`;
     } else {
       resposta = 'Desculpe, não consegui entender sua solicitação.';
     }
