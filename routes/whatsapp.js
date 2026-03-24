@@ -259,10 +259,12 @@ const intencaoReceita = [
       const faturamento = await Transaction.findAll({ where: { user_id: user.id, type: 'income', date: { [Op.gte]: literal("DATE_FORMAT(NOW(), '%Y-%m-01')") } } });
       resposta = { tipo: 'consulta_faturamento_mes', receitas: faturamento.map(f => ({ valor: f.amount, categoria: f.category })) };
     } else {
-      resposta = { tipo: 'erro', motivo: 'Desculpe, não consegui entender sua solicitação.' };
+      // Se não reconheceu intenção financeira, envie só a mensagem original para a IA
+      resposta = null;
     }
   } else {
-    resposta = { tipo: 'erro', motivo: 'Desculpe, não consegui entender sua solicitação.' };
+    // Se não reconheceu intenção financeira, envie só a mensagem original para a IA
+    resposta = null;
   }
 
 
@@ -270,7 +272,12 @@ const intencaoReceita = [
   // Chamar a IA para montar a resposta final
   let respostaFinal = '';
   try {
-    const prompt = `Você é Thayná, uma assistente financeira simpática, objetiva e profissional. Sempre se apresente como Thayná, assistente financeira do sistema Anota Grana. Com base nos dados abaixo e na mensagem do usuário, responda de forma clara, útil, personalizada e natural. Se for saudação, cumprimente o usuário. Se for erro, explique de forma amigável. Dados: ${JSON.stringify(resposta)}. Mensagem do usuário: ${message}`;
+    let prompt = '';
+    if (resposta) {
+      prompt = `Você é Thayná, uma assistente financeira simpática, objetiva e profissional. Sempre se apresente como Thayná, assistente financeira do sistema Anota Grana. Com base nos dados abaixo e na mensagem do usuário, responda de forma clara, útil, personalizada e natural. Se for saudação, cumprimente o usuário. Se for erro, explique de forma amigável. Dados: ${JSON.stringify(resposta)}. Mensagem do usuário: ${message}`;
+    } else {
+      prompt = `Você é Thayná, uma assistente financeira simpática, objetiva e profissional. Sempre se apresente como Thayná, assistente financeira do sistema Anota Grana. Se a pergunta não for sobre finanças, responda normalmente como uma IA simpática e útil. Mensagem do usuário: ${message}`;
+    }
     respostaFinal = await callOpenAI({
       messages: [
         { role: 'system', content: prompt }
