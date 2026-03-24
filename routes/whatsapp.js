@@ -138,6 +138,13 @@ const intencaoReceita = [
     if (intent.intencao === 'saudacao') {
       resposta = 'Olá! Eu sou a Thayná, sua assistente financeira. Como posso te ajudar hoje?';
     }
+  } else {
+    // Fallback para saudações simples se a IA não identificar intenção
+    const msg = (message || '').toLowerCase().normalize('NFD').replace(/[^\w\s]/g, '');
+    const saudacoes = ['oi', 'olá', 'ola', 'bom dia', 'boa tarde', 'boa noite', 'eai', 'opa', 'salve'];
+    if (saudacoes.some(s => msg.startsWith(s))) {
+      resposta = 'Olá! Eu sou a Thayná, sua assistente financeira. Como posso te ajudar hoje?';
+    }
     const User = require('../models/User');
     // Buscar usuário pelo telefone
     const user = await User.findOne({ where: { phone: phone } });
