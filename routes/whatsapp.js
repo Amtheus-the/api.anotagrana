@@ -243,7 +243,29 @@ const intencaoReceita = [
       }
 
     } else if (intent.intencao === 'consulta_contas') {
-      if (intent.conta) {
+      // Verifica se a mensagem é sobre contas a pagar
+      const msgLower = (message || '').toLowerCase();
+      if (
+        msgLower.includes('conta a pagar') ||
+        msgLower.includes('contas a pagar') ||
+        msgLower.includes('contas pendentes') ||
+        msgLower.includes('conta pendente') ||
+        msgLower.includes('tenho alguma conta') ||
+        msgLower.includes('tenho contas para pagar')
+      ) {
+        // Busca contas a pagar (Bills) pendentes
+        const contasPagar = await Bill.findAll({ where: { user_id: user.id, status: 'pending' } });
+        resposta = {
+          tipo: 'consulta_contas_pagar',
+          contas: contasPagar.map(b => ({
+            descricao: b.description,
+            valor: b.amount,
+            vencimento: b.dueDate,
+            categoria: b.category,
+            status: b.status
+          }))
+        };
+      } else if (intent.conta) {
         // Se especificou uma conta, retorna saldo dessa conta
         const conta = await Account.findOne({ where: { user_id: user.id, name: intent.conta } });
         if (conta) {
