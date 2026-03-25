@@ -12,8 +12,11 @@ router.get('/', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { name, type, balance } = req.body;
-  const account = await Account.create({ name, type, balance });
+  const { name, type, balance, user_id } = req.body;
+  if (!user_id) {
+    return res.status(400).json({ error: 'user_id é obrigatório' });
+  }
+  const account = await Account.create({ name, type, balance, user_id });
   res.status(201).json(account);
 });
 

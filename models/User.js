@@ -22,6 +22,10 @@ const User = sequelize.define('User', {
   is_admin: {
     type: DataTypes.BOOLEAN,
     defaultValue: false
+  },
+  onboarding_complete: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
   }
 }, {
   tableName: 'Users', // Garante uso do nome correto da tabela

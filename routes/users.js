@@ -1,3 +1,21 @@
+// Buscar usuário por id (inclui onboarding_complete)
+router.get('/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const user = await User.findByPk(id);
+    if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
+    res.json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      is_admin: user.is_admin,
+      onboarding_complete: user.onboarding_complete
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Erro ao buscar usuário', details: e.message });
+  }
+});
 
 const express = require('express');
 const bcrypt = require('bcryptjs');

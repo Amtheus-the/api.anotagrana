@@ -13,6 +13,9 @@ app.use(bodyParser.json());
 // Rotas de usuário (cadastro, listagem)
 app.use('/users', require('./routes/users'));
 
+// Rota para atualizar onboarding_complete
+app.use('/onboarding', require('./routes/onboarding'));
+
 // Rotas WhatsApp/IA
 app.use('/', require('./routes/whatsapp'));
 
