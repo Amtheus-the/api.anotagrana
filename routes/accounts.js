@@ -1,11 +1,16 @@
 // Atualizar saldo da conta
 router.put('/:id', async (req, res) => {
+  console.log('PUT /accounts/:id chamado', req.params, req.body);
   const { id } = req.params;
   const { balance } = req.body;
   const account = await Account.findByPk(id);
-  if (!account) return res.status(404).json({ error: 'Conta não encontrada' });
+  if (!account) {
+    console.log('Conta não encontrada para id', id);
+    return res.status(404).json({ error: 'Conta não encontrada' });
+  }
   if (typeof balance === 'number') account.balance = balance;
   await account.save();
+  console.log('Conta atualizada:', account.toJSON());
   res.json(account);
 });
 const express = require('express');
