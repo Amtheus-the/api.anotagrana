@@ -1,3 +1,11 @@
+
+const express = require('express');
+const bcrypt = require('bcryptjs');
+const User = require('../models/User');
+const { sendWelcomeMessage } = require('../services/whatsapp');
+
+const router = express.Router();
+
 // Buscar usuário por id (inclui onboarding_complete)
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
@@ -16,13 +24,6 @@ router.get('/:id', async (req, res) => {
     res.status(500).json({ error: 'Erro ao buscar usuário', details: e.message });
   }
 });
-
-const express = require('express');
-const bcrypt = require('bcryptjs');
-const User = require('../models/User');
-
-const router = express.Router();
-const { sendWelcomeMessage } = require('../services/whatsapp');
 
 // Login de usuário
 router.post('/login', async (req, res) => {
