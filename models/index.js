@@ -1,3 +1,4 @@
+
 const sequelize = require('../database');
 const Account = require('./Account');
 const Bill = require('./Bill');
@@ -6,6 +7,8 @@ const MoneyBox = require('./MoneyBox');
 const MoneyBoxDeposit = require('./MoneyBoxDeposit');
 const Transaction = require('./Transaction');
 const User = require('./User');
+const AccountUser = require('./AccountUser');
+const SubscriptionEvent = require('./SubscriptionEvent');
 
 module.exports = {
   sequelize,
@@ -15,5 +18,7 @@ module.exports = {
   MoneyBox,
   MoneyBoxDeposit,
   Transaction,
-  User
+  User,
+  AccountUser
+  ,SubscriptionEvent
 };

@@ -57,11 +57,37 @@ app.post('/webhook-whats', async (req, res) => {
     if (!user) {
       resposta = 'Usuário não encontrado.';
     } else {
+      // Checagem de trial: se já passaram 30 dias do início do trial e não está inscrito,
+      // responder com mensagem fixa e NÃO chamar a OpenAI.
+      if (user.free_trial_started_at && !user.is_subscribed) {
+        try {
+          const trialStart = new Date(user.free_trial_started_at);
+          const now = new Date();
+          const diffDays = Math.floor((now - trialStart) / (1000 * 60 * 60 * 24));
+          if (diffDays >= 30) {
+            resposta = 'Seu período de teste gratuito de 30 dias expirou. Para continuar conversando com a assistente Thayná, por favor assine um plano para ativar o acesso.';
+            // Tenta enviar a mensagem via W-API (não falha a rota se der erro no envio)
+            try {
+              await axios.post(
+                `https://api.w-api.app/v1/message/send-text?instanceId=${INSTANCE_ID}`,
+                { phone, message: resposta },
+                { headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` } }
+              );
+            } catch (e) {
+              console.error('[WHATSAPP][SEND][TRIAL_EXPIRED][ERRO]', e.message || e);
+            }
+            return res.json({ status: 'trial_expired', message: resposta });
+          }
+        } catch (e) {
+          console.error('[WHATSAPP][TRIAL][ERRO]', e.message || e);
+        }
+      }
+
       // 1. IA interpreta intenção e dados (sempre responde em JSON)
       let iaJson = null;
       let iaText = '';
-      try {
-  const prompt = `Você é uma assistente financeira chamada Thayná, do sistema Anota Grana. Analise a frase do usuário e responda APENAS em JSON válido, sem explicações. Sempre que possível, extraia valor, categoria, conta, período, etc. Exemplos:\nUsuário: Acabei de gastar 80 reais em unha\nResposta: {\"intencao\":\"registrar_gasto\",\"valor\":80,\"categoria\":\"unha\"}\nUsuário: Gastei 30 reais no restaurante\nResposta: {\"intencao\":\"registrar_gasto\",\"valor\":30,\"categoria\":\"restaurante\"}\nUsuário: Quanto gastei esse mês?\nResposta: {\"intencao\":\"consulta_gastos_mes\"}\nUsuário: Quanto tenho na minha conta Nubank?\nResposta: {\"intencao\":\"consulta_saldo\",\"conta\":\"Nubank\"}\nUsuário: Quais contas tenho a pagar esse mês?\nResposta: {\"intencao\":\"consulta_contas_a_pagar_mes\"}\nUsuário: Oi\nResposta: {\"intencao\":\"saudacao\"}\nUsuário: Olá\nResposta: {\"intencao\":\"saudacao\"}\nUsuário: Bom dia\nResposta: {\"intencao\":\"saudacao\"}\nUsuário: Boa tarde\nResposta: {\"intencao\":\"saudacao\"}\nUsuário: Boa noite\nResposta: {\"intencao\":\"saudacao\"}\nUsuário: ${message}\nResposta:`;
+    try {
+  const prompt = `Você é uma assistente financeira chamada Thayná, do sistema Anota Grana. É proibido mentir, inventar informações ou responder algo que não saiba. Se não souber a resposta, diga claramente: \"Desculpe, não sei responder isso.\" Nunca tente adivinhar ou criar informações. Seja sempre honesta, objetiva e transparente. Analise a frase do usuário e responda APENAS em JSON válido, sem explicações. Sempre que possível, extraia valor, categoria, conta, período, etc. Se o usuário mencionar mais de um lançamento na mesma frase, responda com uma lista no campo "lancamentos" e use a intenção "registrar_multiplos_gastos". Se o usuário perguntar qual o modelo para múltiplos lançamentos, explique que ele deve enviar assim: {\"intencao\":\"registrar_multiplos_gastos\",\"lancamentos\":[{\"valor\":50,\"categoria\":\"mercado\"},{\"valor\":30,\"categoria\":\"farmácia\"}]}. Exemplos:\nUsuário: Acabei de gastar 80 reais em unha\nResposta: {\"intencao\":\"registrar_gasto\",\"valor\":80,\"categoria\":\"unha\"}\nUsuário: Gastei 30 reais no restaurante\nResposta: {\"intencao\":\"registrar_gasto\",\"valor\":30,\"categoria\":\"restaurante\"}\nUsuário: Gastei 50 no mercado e 30 na farmácia\nResposta: {\"intencao\":\"registrar_multiplos_gastos\",\"lancamentos\":[{\"valor\":50,\"categoria\":\"mercado\"},{\"valor\":30,\"categoria\":\"farmácia\"}]}\nUsuário: Qual o modelo para múltiplos lançamentos?\nResposta: {\"modelo\":{\"intencao\":\"registrar_multiplos_gastos\",\"lancamentos\":[{\"valor\":50,\"categoria\":\"mercado\"},{\"valor\":30,\"categoria\":\"farmácia\"}]}}\nUsuário: Quanto gastei esse mês?\nResposta: {\"intencao\":\"consulta_gastos_mes\"}\nUsuário: Quanto tenho na minha conta Nubank?\nResposta: {\"intencao\":\"consulta_saldo\",\"conta\":\"Nubank\"}\nUsuário: Quais contas tenho a pagar esse mês?\nResposta: {\"intencao\":\"consulta_contas_a_pagar_mes\"}\nUsuário: Oi\nResposta: {\"intencao\":\"saudacao\"}\nUsuário: Olá\nResposta: {\"intencao\":\"saudacao\"}\nUsuário: Bom dia\nResposta: {\"intencao\":\"saudacao\"}\nUsuário: Boa tarde\nResposta: {\"intencao\":\"saudacao\"}\nUsuário: Boa noite\nResposta: {\"intencao\":\"saudacao\"}\nUsuário: ${message}\nResposta:`;
         console.log('[WHATSAPP][IA][REQUEST]', prompt);
         const iaRes = await axios.post(
           'https://api.openai.com/v1/chat/completions',
@@ -83,8 +109,34 @@ app.post('/webhook-whats', async (req, res) => {
         console.log('[WHATSAPP][IA][RAW RESPONSE DATA]', iaRes.data);
         iaText = iaRes.data.choices[0].message.content.trim();
         console.log('[WHATSAPP][IA][RESPONSE]', iaText);
-        iaJson = JSON.parse(iaText);
+        try {
+          iaJson = JSON.parse(iaText);
+        } catch (e) {
+          iaJson = null;
+        }
         console.log('[WHATSAPP][IA][JSON PARSED]', iaJson);
+
+        // Validação: se a intenção for múltiplos lançamentos, mas não vier no formato esperado, envia o modelo correto
+        const modeloMultiplos = {
+          "modelo": {
+            "intencao": "registrar_multiplos_gastos",
+            "lancamentos": [
+              { "valor": 50, "categoria": "mercado" },
+              { "valor": 30, "categoria": "farmácia" }
+            ]
+          }
+        };
+        if (
+          message &&
+          /mais de um|múltiplos|multiplos|vários|varios|lançamentos|lancamentos|como faço|como registrar/i.test(message) &&
+          (!iaJson || !(
+            (iaJson.intencao === 'registrar_multiplos_gastos' && Array.isArray(iaJson.lancamentos)) ||
+            (iaJson.modelo && iaJson.modelo.intencao === 'registrar_multiplos_gastos' && Array.isArray(iaJson.modelo.lancamentos))
+          ))
+        ) {
+          iaJson = { ...modeloMultiplos };
+          iaText = JSON.stringify(modeloMultiplos, null, 2);
+        }
       } catch (e) {
         console.error('[WHATSAPP][IA][ERRO PARSE OU REQUISIÇÃO]', e.message);
         if (e.response) {
@@ -93,10 +145,74 @@ app.post('/webhook-whats', async (req, res) => {
         iaJson = null;
       }
       // 2. Executa ação real conforme intenção
-      if (iaJson && iaJson.intencao === 'registrar_gasto' && iaJson.valor) {
-        // Registrar gasto
+      if (iaJson && iaJson.intencao === 'registrar_multiplas_receitas' && Array.isArray(iaJson.lancamentos) && iaJson.lancamentos.length > 0) {
+        // Múltiplos lançamentos de receitas
         const Account = require('./models/Account');
-        // Busca conta principal (isMain: 1), se não houver pega a primeira
+        let conta = await Account.findOne({ where: { user_id: user.id, isMain: 1 } });
+        if (!conta) {
+          conta = await Account.findOne({ where: { user_id: user.id }, order: [['id', 'ASC']] });
+        }
+        if (!conta) {
+          resposta = 'Não foi possível lançar porque você não tem nenhuma conta cadastrada. Cadastre uma conta primeiro.';
+        } else {
+          let total = 0;
+          let detalhes = [];
+          for (const lanc of iaJson.lancamentos) {
+            if (lanc.valor) {
+              await Transaction.create({
+                user_id: user.id,
+                accountId: conta.id,
+                amount: lanc.valor,
+                type: 'income',
+                category: lanc.categoria || 'Outros',
+                account_name: conta.name,
+                date: new Date(), // Sempre data atual
+                description: lanc.categoria || 'Lançamento múltiplo'
+              });
+              conta.balance = (conta.balance || 0) + Number(lanc.valor);
+              total += Number(lanc.valor);
+              detalhes.push(`R$ ${lanc.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} em "${lanc.categoria || 'outros'}"`);
+            }
+          }
+          await conta.save();
+          resposta = `Registrado! Suas receitas (${detalhes.join('; ')}) foram adicionadas e somadas à conta principal.`;
+        }
+      } else 
+      if (iaJson && iaJson.intencao === 'registrar_multiplos_gastos' && Array.isArray(iaJson.lancamentos) && iaJson.lancamentos.length > 0) {
+        // Múltiplos lançamentos de gastos
+        const Account = require('./models/Account');
+        let conta = await Account.findOne({ where: { user_id: user.id, isMain: 1 } });
+        if (!conta) {
+          conta = await Account.findOne({ where: { user_id: user.id }, order: [['id', 'ASC']] });
+        }
+        if (!conta) {
+          resposta = 'Não foi possível lançar porque você não tem nenhuma conta cadastrada. Cadastre uma conta primeiro.';
+        } else {
+          let total = 0;
+          let detalhes = [];
+          for (const lanc of iaJson.lancamentos) {
+            if (lanc.valor) {
+              await Transaction.create({
+                user_id: user.id,
+                accountId: conta.id,
+                amount: lanc.valor,
+                type: 'expense',
+                category: lanc.categoria || 'Outros',
+                account_name: conta.name,
+                date: new Date(), // Sempre data atual
+                description: lanc.categoria || 'Lançamento múltiplo'
+              });
+              conta.balance = (conta.balance || 0) - Number(lanc.valor);
+              total += Number(lanc.valor);
+              detalhes.push(`R$ ${lanc.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} em "${lanc.categoria || 'outros'}"`);
+            }
+          }
+          await conta.save();
+          resposta = `Registrado! Suas despesas (${detalhes.join('; ')}) foram adicionadas e descontadas da conta principal.`;
+        }
+      } else if (iaJson && iaJson.intencao === 'registrar_gasto' && iaJson.valor) {
+        // Registrar gasto único
+        const Account = require('./models/Account');
         let conta = await Account.findOne({ where: { user_id: user.id, isMain: 1 } });
         if (!conta) {
           conta = await Account.findOne({ where: { user_id: user.id }, order: [['id', 'ASC']] });
@@ -111,10 +227,9 @@ app.post('/webhook-whats', async (req, res) => {
             type: 'expense',
             category: iaJson.categoria || 'Outros',
             account_name: conta.name,
-            date: new Date(),
+            date: new Date(), // Sempre data atual
             description: message
           });
-          // Desconta do saldo da conta
           conta.balance = (conta.balance || 0) - Number(iaJson.valor);
           await conta.save();
           resposta = `Registrado! Sua despesa de R$ ${iaJson.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} com "${iaJson.categoria || 'outros'}" foi adicionada e descontada da conta principal.`;
@@ -140,7 +255,7 @@ app.post('/webhook-whats', async (req, res) => {
             type: 'income',
             category: iaJson.categoria || 'Outros',
             account_name: conta.name,
-            date: new Date(),
+            date: new Date(), // Sempre data atual
             description: message
           });
           // Atualiza saldo da conta

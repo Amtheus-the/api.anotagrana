@@ -7,8 +7,12 @@ const { sequelize, Account, Bill, Investment, MoneyBox, MoneyBoxDeposit, Transac
 const { OPENAI_KEY, INSTANCE_ID, TOKEN, PORT = 3001 } = process.env;
 
 app.use(cors());
-app.use(bodyParser.json());
+// aceitar payloads maiores (base64 de áudio pode ser grande)
+app.use(bodyParser.json({ limit: '20mb' }));
+app.use(bodyParser.urlencoded({ limit: '20mb', extended: true }));
 
+// Rota de estatísticas admin
+app.use('/admin', require('./routes/admin'));
 
 // Rotas de usuário (cadastro, listagem)
 app.use('/users', require('./routes/users'));
@@ -19,8 +23,41 @@ app.use('/onboarding', require('./routes/onboarding'));
 // Rotas WhatsApp/IA
 app.use('/', require('./routes/whatsapp'));
 
+// Rotas Asaas (integração pagamentos)
+app.use('/asaas', require('./routes/asaas'));
 
-
+// Rotas MoneyBox
+// Depósito atômico em caixinha: soma na caixinha, desconta da conta e registra depósito
+app.post('/moneyboxes/:id/deposit', async (req, res) => {
+  const { id } = req.params;
+  const { amount, accountId, user_id } = req.body;
+  if (!amount || !accountId || !user_id) {
+    return res.status(400).json({ error: 'amount, accountId e user_id são obrigatórios' });
+  }
+  const box = await MoneyBox.findByPk(id);
+  if (!box) return res.status(404).json({ error: 'Caixinha não encontrada' });
+  const account = await Account.findByPk(accountId);
+  if (!account) return res.status(404).json({ error: 'Conta de origem não encontrada' });
+  if (account.balance < amount) return res.status(400).json({ error: 'Saldo insuficiente na conta de origem' });
+  // Transação atômica
+  await sequelize.transaction(async (t) => {
+    box.total = (box.total || 0) + amount;
+    await box.save({ transaction: t });
+    account.balance = (account.balance || 0) - amount;
+    await account.save({ transaction: t });
+    // Registra depósito (opcional)
+    if (typeof MoneyBoxDeposit !== 'undefined') {
+      await MoneyBoxDeposit.create({
+        moneyBoxId: box.id,
+        amount,
+        date: new Date(),
+        user_id,
+        accountId: account.id
+      }, { transaction: t });
+    }
+  });
+  res.json({ success: true, boxId: box.id, accountId: account.id });
+});
 // Rotas MoneyBox
 app.get('/moneyboxes', async (req, res) => {
   const { user_id } = req.query;
@@ -94,76 +131,16 @@ app.get('/', async (req, res) => {
 });
 // ...existing code...
 
-// Rotas Account
-app.get('/accounts', async (req, res) => {
-  const { user_id } = req.query;
-  if (!user_id) return res.status(400).json({ error: 'user_id é obrigatório' });
-  const accounts = await Account.findAll({ where: { user_id } });
-  res.json(accounts);
-});
 
-app.post('/accounts', async (req, res) => {
-  const { name, type, balance, user_id } = req.body;
-  if (!user_id) return res.status(400).json({ error: 'user_id é obrigatório' });
-  const account = await Account.create({ name, type, balance, user_id });
-  res.status(201).json(account);
-});
+// Rotas Account (profissional: usa router separado)
+const accountsRouter = require('./routes/accounts');
+app.use('/accounts', accountsRouter);
 
 
-app.delete('/accounts/:id', async (req, res) => {
-  const { id } = req.params;
-  await Account.destroy({ where: { id } });
-  res.status(204).end();
-});
 
-// PATCH para atualizar conta (ex: definir como principal)
-app.patch('/accounts/:id', async (req, res) => {
-  const { id } = req.params;
-  const { isMain } = req.body;
-  const account = await Account.findByPk(id);
-  if (!account) return res.status(404).json({ error: 'Conta não encontrada' });
-  if (isMain) {
-    // Remove principal das outras contas do mesmo usuário
-    await Account.update({ isMain: false }, { where: { user_id: account.user_id } });
-  }
-  account.isMain = !!isMain;
-  await account.save();
-  res.json(account);
-});
-
-
-// Rotas Transaction
-app.get('/transactions', async (req, res) => {
-  const { user_id } = req.query;
-  if (!user_id) return res.status(400).json({ error: 'user_id é obrigatório' });
-  const transactions = await Transaction.findAll({ where: { user_id }, order: [['date', 'DESC']] });
-  res.json(transactions);
-});
-
-app.post('/transactions', async (req, res) => {
-  const { type, amount, category, account_id, description, date, user_id } = req.body;
-  if (!user_id) return res.status(400).json({ error: 'user_id é obrigatório' });
-  const account = await Account.findByPk(account_id);
-  if (!account) return res.status(400).json({ error: 'Conta não encontrada' });
-
-  const tx = await Transaction.create({
-    type,
-    amount,
-    category,
-    accountId: account_id,
-    description,
-    date,
-    account_name: account.name,
-    user_id
-  });
-
-  // Atualiza saldo da conta
-  const delta = type === 'income' ? parseFloat(amount) : -parseFloat(amount);
-  account.balance = (account.balance || 0) + delta;
-  await account.save();
-
-  res.status(201).json(tx);
-});
+// Rotas Transaction (todas as operações REST)
+const transactionsRouter = require('./routes/transactions');
+app.use('/transactions', transactionsRouter);
 
 
 // Rotas MoneyBox

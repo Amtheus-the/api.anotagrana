@@ -17,6 +17,10 @@ const Account = sequelize.define('Account', {
   isMain: {
     type: DataTypes.BOOLEAN,
     defaultValue: false
+  },
+  bankLogo: {
+    type: DataTypes.STRING,
+    allowNull: true
   }
 });
 
