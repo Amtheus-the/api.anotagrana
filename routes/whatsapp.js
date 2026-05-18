@@ -168,19 +168,32 @@ router.post('/webhook-whats', async (req, res) => {
   // Se for áudio, baixa, transcreve e responde
   if (isAudio && audioUrl) {
     try {
-      // Baixar o áudio
+      // Baixar o áudio com até 2 tentativas
       let audioResp;
-      try {
-        console.log('[WEBHOOK-WHATS][AUDIO][DOWNLOAD] Baixando áudio da URL:', audioUrl);
-        audioResp = await axios.get(audioUrl, { responseType: 'arraybuffer' });
-      } catch (downloadErr) {
-        console.error('[WEBHOOK-WHATS][AUDIO][DOWNLOAD][ERRO]', {
-          url: audioUrl,
-          status: downloadErr.response?.status,
-          headers: downloadErr.response?.headers,
-          data: downloadErr.response?.data,
-          message: downloadErr.message
-        });
+      let downloadSuccess = false;
+      let lastError = null;
+      for (let tentativa = 1; tentativa <= 2; tentativa++) {
+        try {
+          console.log(`[WEBHOOK-WHATS][AUDIO][DOWNLOAD] Tentativa ${tentativa} baixando áudio da URL:`, audioUrl);
+          audioResp = await axios.get(audioUrl, { responseType: 'arraybuffer' });
+          downloadSuccess = true;
+          break;
+        } catch (downloadErr) {
+          lastError = downloadErr;
+          console.error(`[WEBHOOK-WHATS][AUDIO][DOWNLOAD][ERRO] Tentativa ${tentativa}`, {
+            url: audioUrl,
+            status: downloadErr.response?.status,
+            headers: downloadErr.response?.headers,
+            data: downloadErr.response?.data,
+            message: downloadErr.message
+          });
+          if (tentativa < 2) {
+            // Pequeno delay antes de tentar de novo
+            await new Promise(r => setTimeout(r, 800));
+          }
+        }
+      }
+      if (!downloadSuccess) {
         const url = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
         const payload = { phone, message: 'Erro ao baixar o áudio (link inválido ou expirado). Tente enviar novamente.' };
         const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.TOKEN}` };
