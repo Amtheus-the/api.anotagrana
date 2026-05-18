@@ -31,22 +31,29 @@ router.get('/:id', async (req, res) => {
 
 // Login de usuário
 router.post('/login', async (req, res) => {
+  console.log('POST /users/login chamado');
   try {
     const { email, password } = req.body;
+    console.log('Tentativa de login para o e-mail:', email);
     if (!email || !password) {
+      console.log('E-mail ou senha não enviados');
       return res.status(400).json({ error: 'Preencha e-mail e senha.' });
     }
     const user = await User.findOne({ where: { email } });
     if (!user) {
+      console.log('Usuário não encontrado para o e-mail:', email);
       return res.status(401).json({ error: 'Usuário ou senha inválidos.' });
     }
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) {
+      console.log('Senha inválida para o e-mail:', email);
       return res.status(401).json({ error: 'Usuário ou senha inválidos.' });
     }
     // Retorna dados básicos do usuário (sem senha)
+    console.log('Login bem-sucedido para o e-mail:', email);
     res.json({ id: user.id, name: user.name, email: user.email, phone: user.phone, is_admin: user.is_admin });
   } catch (e) {
+    console.error('Erro no login:', e);
     res.status(500).json({ error: 'Erro ao fazer login', details: e.message });
   }
 });
