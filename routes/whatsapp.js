@@ -153,11 +153,15 @@ router.post('/webhook-whats', async (req, res) => {
   let isAudio = false;
   let audioUrl = null;
   let audioMimetype = null;
+  let audioMediaKey = null;
+  let audioDirectPath = null;
   if (body.msgContent) {
     if (body.msgContent.audioMessage && body.msgContent.audioMessage.url) {
       isAudio = true;
-      audioUrl = body.msgContent.audioMessage.url;
+      // Novos campos para baixar corretamente via W-API
       audioMimetype = body.msgContent.audioMessage.mimetype || 'audio/ogg';
+      audioMediaKey = body.msgContent.audioMessage.mediaKey;
+      audioDirectPath = body.msgContent.audioMessage.directPath;
     } else if (body.msgContent.conversation) {
       message = body.msgContent.conversation;
     } else if (body.msgContent.extendedTextMessage && body.msgContent.extendedTextMessage.text) {
@@ -166,40 +170,30 @@ router.post('/webhook-whats', async (req, res) => {
   }
 
   // Se for áudio, baixa, transcreve e responde
-  if (isAudio && audioUrl) {
+  if (isAudio && audioMediaKey && audioDirectPath) {
     try {
-      // Baixar o áudio com até 2 tentativas
-      let audioResp;
-      let downloadSuccess = false;
-      let lastError = null;
-      for (let tentativa = 1; tentativa <= 2; tentativa++) {
-        try {
-          console.log(`[WEBHOOK-WHATS][AUDIO][DOWNLOAD] Tentativa ${tentativa} baixando áudio da URL:`, audioUrl);
-          audioResp = await axios.get(audioUrl, { responseType: 'arraybuffer' });
-          downloadSuccess = true;
-          break;
-        } catch (downloadErr) {
-          lastError = downloadErr;
-          console.error(`[WEBHOOK-WHATS][AUDIO][DOWNLOAD][ERRO] Tentativa ${tentativa}`, {
-            url: audioUrl,
-            status: downloadErr.response?.status,
-            headers: downloadErr.response?.headers,
-            data: downloadErr.response?.data,
-            message: downloadErr.message
-          });
-          if (tentativa < 2) {
-            // Pequeno delay antes de tentar de novo
-            await new Promise(r => setTimeout(r, 800));
-          }
-        }
-      }
-      if (!downloadSuccess) {
+      // Baixar o áudio corretamente via W-API
+      const downloadUrl = `https://api.w-api.app/v1/message/download-media?instanceId=${process.env.INSTANCE_ID}`;
+      const downloadPayload = {
+        mediaKey: audioMediaKey,
+        directPath: audioDirectPath,
+        type: 'audio',
+        mimetype: audioMimetype || 'audio/ogg'
+      };
+      const downloadHeaders = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.TOKEN}`
+      };
+      const downloadRes = await axios.post(downloadUrl, downloadPayload, { headers: downloadHeaders });
+      if (!downloadRes.data || !downloadRes.data.fileLink) {
         const url = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
         const payload = { phone, message: 'Erro ao baixar o áudio (link inválido ou expirado). Tente enviar novamente.' };
         const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.TOKEN}` };
         await axios.post(url, payload, { headers });
-        return res.json({ status: 'erro', motivo: 'audio_download_falhou', url: audioUrl });
+        return res.json({ status: 'erro', motivo: 'audio_download_falhou', info: downloadRes.data });
       }
+      // Agora sim, baixe o áudio do link temporário
+      const audioResp = await axios.get(downloadRes.data.fileLink, { responseType: 'arraybuffer' });
       const audioBuffer = Buffer.from(audioResp.data, 'binary');
       // Converter para base64
       const audioBase64 = audioBuffer.toString('base64');
