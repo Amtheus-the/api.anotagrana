@@ -169,7 +169,24 @@ router.post('/webhook-whats', async (req, res) => {
   if (isAudio && audioUrl) {
     try {
       // Baixar o áudio
-      const audioResp = await axios.get(audioUrl, { responseType: 'arraybuffer' });
+      let audioResp;
+      try {
+        console.log('[WEBHOOK-WHATS][AUDIO][DOWNLOAD] Baixando áudio da URL:', audioUrl);
+        audioResp = await axios.get(audioUrl, { responseType: 'arraybuffer' });
+      } catch (downloadErr) {
+        console.error('[WEBHOOK-WHATS][AUDIO][DOWNLOAD][ERRO]', {
+          url: audioUrl,
+          status: downloadErr.response?.status,
+          headers: downloadErr.response?.headers,
+          data: downloadErr.response?.data,
+          message: downloadErr.message
+        });
+        const url = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
+        const payload = { phone, message: 'Erro ao baixar o áudio (link inválido ou expirado). Tente enviar novamente.' };
+        const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.TOKEN}` };
+        await axios.post(url, payload, { headers });
+        return res.json({ status: 'erro', motivo: 'audio_download_falhou', url: audioUrl });
+      }
       const audioBuffer = Buffer.from(audioResp.data, 'binary');
       // Converter para base64
       const audioBase64 = audioBuffer.toString('base64');
