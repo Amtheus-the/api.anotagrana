@@ -184,8 +184,10 @@ router.post('/webhook-whats', async (req, res) => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${process.env.TOKEN}`
       };
-      const downloadRes = await axios.post(downloadUrl, downloadPayload, { headers: downloadHeaders });
-      if (!downloadRes.data || !downloadRes.data.fileLink) {
+  console.log('[WAPI][DOWNLOAD-MEDIA][PAYLOAD]', downloadPayload);
+  const downloadRes = await axios.post(downloadUrl, downloadPayload, { headers: downloadHeaders });
+  console.log('[WAPI][DOWNLOAD-MEDIA][RESPONSE]', downloadRes.data);
+  if (!downloadRes.data || !downloadRes.data.fileLink) {
         const url = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
         const payload = { phone, message: 'Erro ao baixar o áudio (link inválido ou expirado). Tente enviar novamente.' };
         const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.TOKEN}` };
