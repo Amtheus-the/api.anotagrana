@@ -6,7 +6,13 @@ const bodyParser = require('body-parser');
 const { sequelize, Account, Bill, Investment, MoneyBox, MoneyBoxDeposit, Transaction, User } = require('./models');
 const { OPENAI_KEY, INSTANCE_ID, TOKEN, PORT = 3001 } = process.env;
 
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
+  optionsSuccessStatus: 200,
+}));
+app.options('*', cors());
 // aceitar payloads maiores (base64 de áudio pode ser grande)
 app.use(bodyParser.json({ limit: '20mb' }));
 app.use(bodyParser.urlencoded({ limit: '20mb', extended: true }));
