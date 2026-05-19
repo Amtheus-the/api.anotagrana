@@ -231,8 +231,10 @@ router.post('/webhook-whats', async (req, res) => {
       console.log('[AUDIO][TRANSCRIBE][INICIANDO]', { tamanho: audioBase64.length });
       let transcribeRes;
       try {
+        // Use a URL fixa de produção
+        const transcribeUrl = 'https://papayawhip-aardvark-365953.hostingersite.com/transcribe-audio';
         transcribeRes = await axios.post(
-          `${req.protocol}://${req.get('host')}/transcribe-audio`,
+          transcribeUrl,
           {
             audioBase64,
             filename: 'audio.ogg',
