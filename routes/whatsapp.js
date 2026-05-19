@@ -184,10 +184,10 @@ router.post('/webhook-whats', async (req, res) => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${process.env.TOKEN}`
       };
-  console.log('[WAPI][DOWNLOAD-MEDIA][PAYLOAD]', downloadPayload);
-  const downloadRes = await axios.post(downloadUrl, downloadPayload, { headers: downloadHeaders });
-  console.log('[WAPI][DOWNLOAD-MEDIA][RESPONSE]', downloadRes.data);
-  if (!downloadRes.data || !downloadRes.data.fileLink) {
+      console.log('[WAPI][DOWNLOAD-MEDIA][PAYLOAD]', downloadPayload);
+      const downloadRes = await axios.post(downloadUrl, downloadPayload, { headers: downloadHeaders });
+      console.log('[WAPI][DOWNLOAD-MEDIA][RESPONSE]', downloadRes.data);
+      if (!downloadRes.data || !downloadRes.data.fileLink) {
         const url = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
         const payload = { phone, message: 'Erro ao baixar o áudio (link inválido ou expirado). Tente enviar novamente.' };
         const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.TOKEN}` };
@@ -195,7 +195,18 @@ router.post('/webhook-whats', async (req, res) => {
         return res.json({ status: 'erro', motivo: 'audio_download_falhou', info: downloadRes.data });
       }
       // Agora sim, baixe o áudio do link temporário
-      const audioResp = await axios.get(downloadRes.data.fileLink, { responseType: 'arraybuffer' });
+      let audioResp;
+      try {
+        console.log('[AUDIO][DOWNLOAD][LINK]', downloadRes.data.fileLink);
+        audioResp = await axios.get(downloadRes.data.fileLink, { responseType: 'arraybuffer' });
+      } catch (err) {
+        console.error('[AUDIO][DOWNLOAD][ERRO]', err.response?.status, err.response?.data, downloadRes.data.fileLink);
+        const url = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
+        const payload = { phone, message: `Erro ao baixar o áudio (status ${err.response?.status || '??'}). Tente novamente.` };
+        const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.TOKEN}` };
+        await axios.post(url, payload, { headers });
+        return res.json({ status: 'erro', motivo: 'audio_download_erro', status: err.response?.status, data: err.response?.data });
+      }
       const audioBuffer = Buffer.from(audioResp.data, 'binary');
       // Converter para base64
       const audioBase64 = audioBuffer.toString('base64');
