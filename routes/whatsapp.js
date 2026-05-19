@@ -196,16 +196,32 @@ router.post('/webhook-whats', async (req, res) => {
       }
       // Agora sim, baixe o áudio do link temporário
       let audioResp;
-      try {
-        console.log('[AUDIO][DOWNLOAD][LINK]', downloadRes.data.fileLink);
-        audioResp = await axios.get(downloadRes.data.fileLink, { responseType: 'arraybuffer' });
-      } catch (err) {
-        console.error('[AUDIO][DOWNLOAD][ERRO]', err.response?.status, err.response?.data, downloadRes.data.fileLink);
+      let downloadOk = false;
+      let lastErr = null;
+      const maxTries = 2;
+      for (let attempt = 1; attempt <= maxTries; attempt++) {
+        try {
+          const t0 = Date.now();
+          console.log(`[AUDIO][DOWNLOAD][LINK][Tentativa ${attempt}]`, downloadRes.data.fileLink);
+          audioResp = await axios.get(downloadRes.data.fileLink, { responseType: 'arraybuffer' });
+          const t1 = Date.now();
+          console.log(`[AUDIO][DOWNLOAD][SUCESSO][Tentativa ${attempt}] Tempo: ${t1 - t0}ms`);
+          downloadOk = true;
+          break;
+        } catch (err) {
+          lastErr = err;
+          console.error(`[AUDIO][DOWNLOAD][ERRO][Tentativa ${attempt}]`, err.response?.status, err.response?.data, downloadRes.data.fileLink);
+          if (attempt < maxTries) {
+            await new Promise(r => setTimeout(r, 500)); // espera 500ms antes de tentar de novo
+          }
+        }
+      }
+      if (!downloadOk) {
         const url = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
-        const payload = { phone, message: `Erro ao baixar o áudio (status ${err.response?.status || '??'}). Tente novamente.` };
+        const payload = { phone, message: `Erro ao baixar o áudio (status ${lastErr?.response?.status || '??'}). Tente novamente.` };
         const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.TOKEN}` };
         await axios.post(url, payload, { headers });
-        return res.json({ status: 'erro', motivo: 'audio_download_erro', status: err.response?.status, data: err.response?.data });
+        return res.json({ status: 'erro', motivo: 'audio_download_erro', status: lastErr?.response?.status, data: lastErr?.response?.data });
       }
       const audioBuffer = Buffer.from(audioResp.data, 'binary');
       // Converter para base64
