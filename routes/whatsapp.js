@@ -350,7 +350,47 @@ router.post('/webhook-whats', async (req, res) => {
   }
 
   // Normaliza a mensagem para minúsculas e sem acentos
+
   const msgLower = (message || '').toLowerCase().normalize('NFD').replace(/[^\w\s]/g, '');
+
+  // Intercepta perguntas sobre contas do usuário ANTES de empresas/ações
+  const padroesConta = [
+    'minha conta',
+    'minhas contas',
+    'conta cadastrada',
+    'contas cadastradas',
+    'quais contas',
+    'quantas contas',
+    'saldo da conta',
+    'saldo das contas',
+    'meu saldo',
+    'saldo total',
+    'conta bancaria',
+    'contas bancarias',
+    'conta banco',
+    'contas banco',
+    'conta do banco',
+    'contas do banco',
+    'conta pessoal',
+    'contas pessoais',
+    'conta digital',
+    'contas digitais'
+  ];
+  for (const padrao of padroesConta) {
+    if (msgLower.includes(padrao.replace(/[áãâàéêíóôõúç]/g, c => ({'á':'a','ã':'a','â':'a','à':'a','é':'e','ê':'e','í':'i','ó':'o','ô':'o','õ':'o','ú':'u','ç':'c'}[c]||c)))) {
+      // Aqui você pode chamar a lógica de consulta de contas do usuário, ou apenas responder que está consultando as contas
+      const respostaFinal = 'Consultando suas contas cadastradas. Aguarde um momento...';
+      try {
+        const url = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
+        const payload = { phone, message: respostaFinal };
+        const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.TOKEN}` };
+        await axios.post(url, payload, { headers });
+      } catch (err) {
+        console.error('[WEBHOOK-WHATS][ERRO][CONTA] Erro ao enviar resposta:', err.message);
+      }
+      return res.json({ status: 'sucesso', resposta: respostaFinal });
+    }
+  }
 
   // Detecta pedidos de link da plataforma e responde imediatamente (deve ser o PRIMEIRO bloco de interceptação)
   const padroesLink = [
