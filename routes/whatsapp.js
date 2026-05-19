@@ -169,7 +169,7 @@ router.post('/webhook-whats', async (req, res) => {
     }
   }
 
-  // Se for áudio, baixa, transcreve e responde
+  // Se for áudio, baixa, transcreve e segue o fluxo normal de texto
   if (isAudio && audioMediaKey && audioDirectPath) {
     try {
       // Baixar o áudio corretamente via W-API
@@ -255,21 +255,9 @@ router.post('/webhook-whats', async (req, res) => {
         await axios.post(url, payload, { headers });
         return res.json({ status: 'erro', motivo: 'transcricao_falhou' });
       }
-      // Consultar IA
-      const resposta = await callOpenAI({
-        messages: [
-          { role: 'system', content: `Você é Thayná, uma assistente financeira simpática, objetiva e profissional. Responda sempre de forma curta, direta e natural, sem enrolação. Não repita saudações, agradecimentos ou despedidas. Só confirme o registro ou classificação, informe saldo apenas se solicitado ou relevante. Seja sempre breve, só confirme e pronto.` },
-          { role: 'user', content: textoTranscrito }
-        ],
-        max_tokens: 120,
-        apiKey: process.env.OPENAI_KEY
-      });
-      // Responder no WhatsApp
-      const url = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
-      const payload = { phone, message: resposta };
-      const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.TOKEN}` };
-      await axios.post(url, payload, { headers });
-      return res.json({ status: 'sucesso', resposta });
+      // Ao invés de responder aqui, atribui o texto transcrito à variável message e segue o fluxo normal
+      message = textoTranscrito;
+      // Continua o fluxo normalmente (não retorna aqui)
     } catch (err) {
       console.error('[WEBHOOK-WHATS][AUDIO][ERRO]', err.message || err);
       const url = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
