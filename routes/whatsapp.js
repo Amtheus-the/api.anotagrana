@@ -224,17 +224,26 @@ router.post('/webhook-whats', async (req, res) => {
         return res.json({ status: 'erro', motivo: 'audio_download_erro', status: lastErr?.response?.status, data: lastErr?.response?.data });
       }
       const audioBuffer = Buffer.from(audioResp.data, 'binary');
+      console.log('[AUDIO][DOWNLOAD][OK]');
       // Converter para base64
       const audioBase64 = audioBuffer.toString('base64');
-      // Enviar para transcrição
-      const transcribeRes = await axios.post(
-        `${req.protocol}://${req.get('host')}/transcribe-audio`,
-        {
-          audioBase64,
-          filename: 'audio.ogg',
-          contentType: audioMimetype || 'audio/ogg'
-        }
-      );
+      // Log antes de transcrever
+      console.log('[AUDIO][TRANSCRIBE][INICIANDO]', { tamanho: audioBase64.length });
+      let transcribeRes;
+      try {
+        transcribeRes = await axios.post(
+          `${req.protocol}://${req.get('host')}/transcribe-audio`,
+          {
+            audioBase64,
+            filename: 'audio.ogg',
+            contentType: audioMimetype || 'audio/ogg'
+          }
+        );
+        console.log('[AUDIO][TRANSCRIBE][RESPOSTA]', transcribeRes.data);
+      } catch (err) {
+        console.error('[AUDIO][TRANSCRIBE][ERRO]', err.response?.status, err.response?.data);
+        throw err;
+      }
       const textoTranscrito = transcribeRes.data && transcribeRes.data.text ? transcribeRes.data.text : null;
       if (!textoTranscrito) {
         // Falha ao transcrever
