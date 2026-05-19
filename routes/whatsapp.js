@@ -169,7 +169,7 @@ router.post('/webhook-whats', async (req, res) => {
     }
   }
 
-  // Se for áudio, baixa, transcreve e segue o fluxo normal de texto
+  // Se for áudio, baixa, transcreve e responde
   if (isAudio && audioMediaKey && audioDirectPath) {
     try {
       // Baixar o áudio corretamente via W-API
@@ -255,9 +255,21 @@ router.post('/webhook-whats', async (req, res) => {
         await axios.post(url, payload, { headers });
         return res.json({ status: 'erro', motivo: 'transcricao_falhou' });
       }
-      // Ao invés de responder aqui, atribui o texto transcrito à variável message e segue o fluxo normal
-      message = textoTranscrito;
-      // Continua o fluxo normalmente (não retorna aqui)
+      // Consultar IA
+      const resposta = await callOpenAI({
+        messages: [
+          { role: 'system', content: `Você é Thayná, uma assistente financeira simpática, objetiva e profissional. Responda sempre de forma curta, direta e natural, sem enrolação. Não repita saudações, agradecimentos ou despedidas. Só confirme o registro ou classificação, informe saldo apenas se solicitado ou relevante. Seja sempre breve, só confirme e pronto.` },
+          { role: 'user', content: textoTranscrito }
+        ],
+        max_tokens: 120,
+        apiKey: process.env.OPENAI_KEY
+      });
+      // Responder no WhatsApp
+      const url = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
+      const payload = { phone, message: resposta };
+      const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.TOKEN}` };
+      await axios.post(url, payload, { headers });
+      return res.json({ status: 'sucesso', resposta });
     } catch (err) {
       console.error('[WEBHOOK-WHATS][AUDIO][ERRO]', err.message || err);
       const url = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
@@ -350,47 +362,7 @@ router.post('/webhook-whats', async (req, res) => {
   }
 
   // Normaliza a mensagem para minúsculas e sem acentos
-
   const msgLower = (message || '').toLowerCase().normalize('NFD').replace(/[^\w\s]/g, '');
-
-  // Intercepta perguntas sobre contas do usuário ANTES de empresas/ações
-  const padroesConta = [
-    'minha conta',
-    'minhas contas',
-    'conta cadastrada',
-    'contas cadastradas',
-    'quais contas',
-    'quantas contas',
-    'saldo da conta',
-    'saldo das contas',
-    'meu saldo',
-    'saldo total',
-    'conta bancaria',
-    'contas bancarias',
-    'conta banco',
-    'contas banco',
-    'conta do banco',
-    'contas do banco',
-    'conta pessoal',
-    'contas pessoais',
-    'conta digital',
-    'contas digitais'
-  ];
-  for (const padrao of padroesConta) {
-    if (msgLower.includes(padrao.replace(/[áãâàéêíóôõúç]/g, c => ({'á':'a','ã':'a','â':'a','à':'a','é':'e','ê':'e','í':'i','ó':'o','ô':'o','õ':'o','ú':'u','ç':'c'}[c]||c)))) {
-      // Aqui você pode chamar a lógica de consulta de contas do usuário, ou apenas responder que está consultando as contas
-      const respostaFinal = 'Consultando suas contas cadastradas. Aguarde um momento...';
-      try {
-        const url = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
-        const payload = { phone, message: respostaFinal };
-        const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.TOKEN}` };
-        await axios.post(url, payload, { headers });
-      } catch (err) {
-        console.error('[WEBHOOK-WHATS][ERRO][CONTA] Erro ao enviar resposta:', err.message);
-      }
-      return res.json({ status: 'sucesso', resposta: respostaFinal });
-    }
-  }
 
   // Detecta pedidos de link da plataforma e responde imediatamente (deve ser o PRIMEIRO bloco de interceptação)
   const padroesLink = [
@@ -462,357 +434,6 @@ router.post('/webhook-whats', async (req, res) => {
   }
 
   // Detecta perguntas sobre moedas famosas e responde imediatamente
-  const moedasFamosas = [
-    'dolar', 'dólar', 'usd', 'euro', 'eur', 'libra', 'gbp', 'iene', 'jpy', 'franco', 'franco suiço', 'franco suíço', 'chf',
-    'dolar canadense', 'dólar canadense', 'cad', 'dolar australiano', 'dólar australiano', 'aud',
-    'peso', 'peso argentino', 'ars', 'bitcoin', 'btc', 'ethereum', 'eth', 'dogecoin', 'doge'
-  ];
-  for (const moeda of moedasFamosas) {
-    if (msgLower.includes(moeda)) {
-      const cotacao = await getCurrencyRate(moeda);
-      let respostaFinal = '';
-      if (cotacao && cotacao.value) {
-        respostaFinal = `A cotação atual de ${moeda.charAt(0).toUpperCase() + moeda.slice(1)} é R$ ${Number(cotacao.value).toFixed(2)}`;
-      } else {
-        respostaFinal = `Não foi possível obter a cotação de ${moeda.charAt(0).toUpperCase() + moeda.slice(1)} no momento.`;
-      }
-      try {
-        const url = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
-        const payload = {
-          phone,
-          message: respostaFinal
-        };
-        const headers = {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.TOKEN}`,
-        };
-        console.log('[WEBHOOK-WHATS][DEBUG] Enviando resposta para WhatsApp:', { url, payload, headers });
-        const resp = await axios.post(url, payload, { headers });
-        console.log('[WEBHOOK-WHATS][DEBUG] Resposta da API WhatsApp:', resp.data);
-      } catch (err) {
-        if (err.response) {
-          console.error('[WEBHOOK-WHATS][ERRO] Erro ao enviar resposta:', err.message, '| Status:', err.response.status, '| Data:', err.response.data);
-        } else {
-          console.error('[WEBHOOK-WHATS][ERRO] Erro ao enviar resposta:', err.message);
-        }
-      }
-      return res.json({ status: 'sucesso', resposta: respostaFinal });
-    }
-  }
-
-  // Detecta perguntas sobre empresas americanas famosas e responde com dados da Finnhub
-  const empresasUSA = {
-    'apple': 'AAPL',
-    'aapl': 'AAPL',
-    'microsoft': 'MSFT', // Updated to ensure consistency
-    'msft': 'MSFT',
-    'google': 'GOOGL',
-    'alphabet': 'GOOGL',
-    'googl': 'GOOGL',
-    'amazon': 'AMZN',
-    'amzn': 'AMZN',
-    'meta': 'META',
-    'facebook': 'META',
-    'tesla': 'TSLA',
-    'tsla': 'TSLA',
-    'nvidia': 'NVDA',
-    'nvda': 'NVDA',
-    'netflix': 'NFLX',
-    'nflx': 'NFLX',
-    'paypal': 'PYPL',
-    'pypl': 'PYPL',
-    'adobe': 'ADBE',
-    'adbe': 'ADBE',
-    'intel': 'INTC',
-    'intc': 'INTC',
-    'coca cola': 'KO',
-    'coca-cola': 'KO',
-    'ko': 'KO',
-    'pepsico': 'PEP',
-    'pep': 'PEP',
-    'starbucks': 'SBUX',
-    'sbux': 'SBUX',
-    'disney': 'DIS',
-    'dis': 'DIS',
-    'mcdonalds': 'MCD',
-    'mcd': 'MCD',
-    'boeing': 'BA',
-    'ba': 'BA',
-    'exxon': 'XOM',
-    'exxonmobil': 'XOM',
-    'xom': 'XOM',
-    'chevron': 'CVX',
-    'cvx': 'CVX',
-    'pfizer': 'PFE',
-    'pfe': 'PFE',
-    'johnson & johnson': 'JNJ',
-    'johnson and johnson': 'JNJ',
-    'jnj': 'JNJ',
-    'walmart': 'WMT',
-    'wmt': 'WMT',
-    'procter & gamble': 'PG',
-    'procter and gamble': 'PG',
-    'pg': 'PG',
-    'visa': 'V',
-    'v': 'V',
-    'mastercard': 'MA',
-    'ma': 'MA',
-    'ibm': 'IBM',
-    'oracle': 'ORCL',
-    'orcl': 'ORCL',
-    'uber': 'UBER',
-    'lyft': 'LYFT',
-    'lyft': 'LYFT',
-    'snap': 'SNAP',
-    'snapchat': 'SNAP',
-    'twitter': 'TWTR',
-    'twtr': 'TWTR',
-    'at&t': 'T',
-    'att': 'T',
-    't': 'T',
-    'ford': 'F',
-    'f': 'F',
-    'general motors': 'GM',
-    'gm': 'GM',
-    'cisco': 'CSCO',
-    'csco': 'CSCO',
-    'qualcomm': 'QCOM',
-    'qcom': 'QCOM',
-    'amd': 'AMD',
-    'advanced micro devices': 'AMD',
-    'booking': 'BKNG',
-    'bkng': 'BKNG',
-    'airbnb': 'ABNB',
-    'abnb': 'ABNB',
-    'shopify': 'SHOP',
-    'shop': 'SHOP',
-    'block': 'SQ',
-    'sq': 'SQ',
-    'paypal': 'PYPL',
-    'pypl': 'PYPL',
-    'ebay': 'EBAY',
-    'ebay': 'EBAY',
-    'zoom': 'ZM',
-    'zm': 'ZM',
-    'sp500': '^GSPC',
-    's&p500': '^GSPC',
-    's&p 500': '^GSPC',
-    'dow jones': '^DJI',
-    'nasdaq': '^IXIC'
-  };
-  for (const nome in empresasUSA) {
-    // Regex para palavra inteira (\b) e case-insensitive
-    const regex = new RegExp(`\\b${nome.replace(/[-&]/g, "\\$&")}\\b`, 'i');
-    if (regex.test(msgLower)) {
-      const symbol = empresasUSA[nome];
-      const apiKey = process.env.FINNHUB_KEY;
-      const url = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${apiKey}`;
-      console.log('[FINNHUB][DEBUG][USA] Consultando empresa:', nome, '| Symbol:', symbol, '| API_KEY:', apiKey, '| URL:', url);
-      try {
-        const resUSA = await axios.get(url);
-        const data = resUSA.data;
-        if (data && data.c) {
-          const respostaFinal = `${nome.charAt(0).toUpperCase() + nome.slice(1)} (${symbol}): US$ ${Number(data.c).toFixed(2)}. Variação do dia: ${data.dp ? data.dp.toFixed(2) : '0.00'}%. Último fechamento: US$ ${Number(data.pc).toFixed(2)}.`;
-          const urlW = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
-          const payload = { phone, message: respostaFinal };
-          const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.TOKEN}` };
-          await axios.post(urlW, payload, { headers });
-          return res.json({ status: 'sucesso', resposta: respostaFinal });
-        } else {
-          const respostaFinal = `Não foi possível obter informações atualizadas sobre ${nome}.`;
-          const urlW = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
-          const payload = { phone, message: respostaFinal };
-          const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.TOKEN}` };
-          await axios.post(urlW, payload, { headers });
-          return res.json({ status: 'erro', resposta: respostaFinal });
-        }
-      } catch (err) {
-        if (err.response) {
-          console.error('[FINNHUB][ERRO][USA]', err.message, '| Status:', err.response.status, '| Data:', err.response.data);
-        } else {
-          console.error('[FINNHUB][ERRO][USA]', err.message);
-        }
-        const respostaFinal = `Erro ao consultar dados da empresa ${nome}.`;
-        const urlW = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
-        const payload = { phone, message: respostaFinal };
-        const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.TOKEN}` };
-        await axios.post(urlW, payload, { headers });
-        return res.json({ status: 'erro', resposta: respostaFinal });
-      }
-    }
-  }
-
-  // Detecta perguntas sobre empresas da bolsa BR e responde com dados da Finnhub
-  const empresasB3 = {
-    'petrobras': 'PETR4.SA',
-    'vale': 'VALE3.SA',
-    'itau': 'ITUB4.SA',
-    'bradesco': 'BBDC4.SA',
-    'magalu': 'MGLU3.SA',
-    'magazineluiza': 'MGLU3.SA',
-    'magazine luiza': 'MGLU3.SA',
-    'b3': 'B3SA3.SA',
-    'ambev': 'ABEV3.SA',
-    'weg': 'WEGE3.SA',
-    'suzano': 'SUZB3.SA',
-    'gerdau': 'GGBR4.SA',
-    'banco do brasil': 'BBAS3.SA',
-    'bancointer': 'BIDI11.SA',
-    'inter': 'BIDI11.SA',
-    'santander': 'SANB11.SA',
-    'localiza': 'RENT3.SA',
-    'renner': 'LREN3.SA',
-    'nubank': 'NU',
-    'pagseguro': 'PAGS',
-    'stone': 'STNE',
-    'xp': 'XP',
-    'cvc': 'CVCB3.SA',
-    'azul': 'AZUL4.SA',
-    'gol': 'GOLL4.SA',
-    'prio': 'PRIO3.SA',
-    'priner': 'PRNR3.SA',
-    'alpargatas': 'ALPA4.SA',
-    'totvs': 'TOTS3.SA',
-    'petz': 'PETZ3.SA',
-    'cielo': 'CIEL3.SA',
-    'via': 'VIIA3.SA',
-    'americanas': 'AMER3.SA',
-    'cogna': 'COGN3.SA',
-    'yduqs': 'YDUQ3.SA',
-    'soma': 'SOMA3.SA',
-    'multiplan': 'MULT3.SA',
-    'iguatemi': 'IGTI11.SA',
-    'brf': 'BRFS3.SA',
-    'marfrig': 'MRFG3.SA',
-    'jbs': 'JBSS3.SA',
-    'marisa': 'AMAR3.SA',
-    'irb': 'IRBR3.SA',
-    'sulamerica': 'SULA11.SA',
-    'sul américa': 'SULA11.SA',
-    'sul américa': 'SULA11.SA',
-    'banco pan': 'BPAN4.SA',
-    'pan': 'BPAN4.SA',
-    'movida': 'MOVI3.SA',
-    'alpargatas': 'ALPA4.SA',
-    'raizen': 'RAIZ4.SA',
-    'petro rio': 'PRIO3.SA',
-    'petrobras distribuidora': 'BRDT3.SA',
-    'braskem': 'BRKM5.SA',
-    'cosan': 'CSAN3.SA',
-    'eletrobras': 'ELET3.SA',
-    'cpfl': 'CPFE3.SA',
-    'energisa': 'ENGI11.SA',
-    'taesa': 'TAEE11.SA',
-    'cemig': 'CMIG4.SA',
-    'sabesp': 'SBSP3.SA',
-    'sanepar': 'SAPR11.SA',
-    'copel': 'CPLE6.SA',
-    'light': 'LIGT3.SA',
-    'equatorial': 'EQTL3.SA',
-    'enel': 'ENBR3.SA',
-    'transmissao paulista': 'TRPL4.SA',
-    'transmissão paulista': 'TRPL4.SA',
-    'banco safra': 'BSLI11.SA',
-    'banco original': 'ORIG3.SA',
-    'banco mercantil': 'BMEB4.SA',
-    'banco abc': 'ABCB4.SA',
-    'banco modal': 'MODL11.SA',
-    'banco bmg': 'BMGB4.SA',
-    'banco pactual': 'BPAC11.SA',
-    'banco btg': 'BPAC11.SA',
-    'banco btg pactual': 'BPAC11.SA',
-    'banco daycoval': 'DAYC4.SA',
-    'banco indusval': 'IDVL4.SA',
-    'banco paulista': 'PLAS3.SA',
-    'banco voiter': 'VOIT4.SA',
-    'banco banrisul': 'BRSR6.SA',
-    'banrisul': 'BRSR6.SA',
-    'banco do nordeste': 'BNBR3.SA',
-    'banco do estado do pará': 'BPAR3.SA',
-    'banco do estado de sergipe': 'BGIP4.SA',
-    'banco do estado do espírito santo': 'BEES3.SA',
-    'banco do estado de minas gerais': 'BMEB4.SA',
-    'banco do estado do rio grande do sul': 'BRSR6.SA',
-    'banco do estado de santa catarina': 'BESC4.SA',
-    'banco do estado do mato grosso': 'BMTG11.SA',
-    'banco do estado do amazonas': 'BAMG3.SA',
-    'banco do estado do acre': 'BANE3.SA',
-    'banco do estado do amapá': 'BMAP3.SA',
-    'banco do estado do ceará': 'BNCA3.SA',
-    'banco do estado do maranhão': 'BMAO3.SA',
-    'banco do estado do pará': 'BPAR3.SA',
-    'banco do estado do piauí': 'BEPI3.SA',
-    'banco do estado do rio de janeiro': 'BERJ3.SA',
-    'banco do estado do tocantins': 'BTOC3.SA',
-    'banco do estado de rondônia': 'BROD3.SA',
-    'banco do estado de roraima': 'BROR3.SA',
-    'banco do estado de alagoas': 'BNAL3.SA',
-    'banco do estado de goiás': 'BGOS3.SA',
-    'banco do estado de mato grosso do sul': 'BMSU3.SA',
-    'banco do estado de pernambuco': 'BPEP3.SA',
-    'banco do estado de paraíba': 'BPAR3.SA',
-    'banco do estado de sergipe': 'BGIP4.SA',
-    'banco do estado do espírito santo': 'BEES3.SA',
-    'banco do estado de minas gerais': 'BMEB4.SA',
-    'banco do estado do rio grande do sul': 'BRSR6.SA',
-    'banco do estado de santa catarina': 'BESC4.SA',
-    'banco do estado do mato grosso': 'BMTG11.SA',
-    'banco do estado do amazonas': 'BAMG3.SA',
-    'banco do estado do acre': 'BANE3.SA',
-    'banco do estado do amapá': 'BMAP3.SA',
-    'banco do estado do ceará': 'BNCA3.SA',
-    'banco do estado do maranhão': 'BMAO3.SA',
-    'banco do estado do pará': 'BPAR3.SA',
-    'banco do estado do piauí': 'BEPI3.SA',
-    'banco do estado do rio de janeiro': 'BERJ3.SA',
-    'banco do estado do tocantins': 'BTOC3.SA',
-    'banco do estado de rondônia': 'BROD3.SA',
-    'banco do estado de roraima': 'BROR3.SA',
-    'banco do estado de alagoas': 'BNAL3.SA',
-    'banco do estado de goiás': 'BGOS3.SA',
-    'banco do estado de mato grosso do sul': 'BMSU3.SA',
-    'banco do estado de pernambuco': 'BPEP3.SA',
-    'banco do estado de paraíba': 'BPAR3.SA'
-  };
-  for (const nome in empresasB3) {
-    if (msgLower.includes(nome)) {
-      const symbol = empresasB3[nome];
-      const apiKey = process.env.FINNHUB_KEY;
-      const url = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${apiKey}`;
-      console.log('[FINNHUB][DEBUG] Consultando empresa:', nome, '| Symbol:', symbol, '| API_KEY:', apiKey, '| URL:', url);
-      try {
-        const res = await axios.get(url);
-        const data = res.data;
-        if (data && data.c) {
-          const respostaFinal = `${nome.charAt(0).toUpperCase() + nome.slice(1)} (${symbol}): R$ ${Number(data.c).toFixed(2)}. Variação do dia: ${data.dp ? data.dp.toFixed(2) : '0.00'}%. Último fechamento: R$ ${Number(data.pc).toFixed(2)}.`;
-          const urlW = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
-          const payload = { phone, message: respostaFinal };
-          const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.TOKEN}` };
-          await axios.post(urlW, payload, { headers });
-          return res.json({ status: 'sucesso', resposta: respostaFinal });
-        } else {
-          const respostaFinal = `Não foi possível obter informações atualizadas sobre ${nome}.`;
-          const urlW = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
-          const payload = { phone, message: respostaFinal };
-          const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.TOKEN}` };
-          await axios.post(urlW, payload, { headers });
-          return res.json({ status: 'erro', resposta: respostaFinal });
-        }
-      } catch (err) {
-        if (err.response) {
-          console.error('[FINNHUB][ERRO]', err.message, '| Status:', err.response.status, '| Data:', err.response.data);
-        } else {
-          console.error('[FINNHUB][ERRO]', err.message);
-        }
-        const respostaFinal = `Erro ao consultar dados da empresa ${nome}.`;
-        const urlW = `https://api.w-api.app/v1/message/send-text?instanceId=${process.env.INSTANCE_ID}`;
-        const payload = { phone, message: respostaFinal };
-        const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.TOKEN}` };
-        await axios.post(urlW, payload, { headers });
-        return res.json({ status: 'erro', resposta: respostaFinal });
-      }
-    }
-  }
 
   let resposta = '';
   // Detecta saudações e responde imediatamente
